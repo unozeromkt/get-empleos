@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/rolan/OneDrive/Documents/web_dev/get-empleos-temp/**)",
+      "PowerShell(Get-ChildItem \"c:\\\\Users\\\\rolan\\\\OneDrive\\\\Documents\\\\web_dev\\\\get-empleos-temp\" | ForEach-Object { $_.Name })",
+      "Bash(npm run *)",
+      "Bash(Remove-Item -Recurse -Force .next -ErrorAction SilentlyContinue)",
+      "Bash(Write-Output \"Cache borrado\")",
+      "Bash(npm list *)",
+      "Bash(npm install *)",
+      "Bash(New-Item -ItemType File -Path \"c:\\\\Users\\\\rolan\\\\OneDrive\\\\Documents\\\\web_dev\\\\get-empleos\\\\.env.local.example\" -Force)",
+      "Bash(Out-Null)",
+      "Bash(Write-Host \"created\")",
+      "PowerShell(New-Item -ItemType File -Path \"c:\\\\Users\\\\rolan\\\\OneDrive\\\\Documents\\\\web_dev\\\\get-empleos\\\\.env.local.example\" -Force)"
+    ]
+  }
+}
