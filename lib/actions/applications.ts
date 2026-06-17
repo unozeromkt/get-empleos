@@ -10,117 +10,133 @@ import { formatDate } from "@/lib/utils/date";
 // ─── Postularse a una oferta ──────────────────────────────────────────────────
 
 export async function applyToJobAction(formData: FormData) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-  if (!user) redirect("/auth/login");
+    // No usar redirect() desde server actions llamados por startTransition —
+    // puede surfacear como "server-side exception" en el cliente.
+    if (!user) {
+      return { error: { _form: ["Tu sesión expiró. Por favor inicia sesión de nuevo."] } };
+    }
 
-  const raw = {
-    job_id:       formData.get("job_id") as string,
-    cover_letter: (formData.get("cover_letter") as string) || "",
-  };
+    const raw = {
+      job_id:       formData.get("job_id") as string,
+      cover_letter: (formData.get("cover_letter") as string) || "",
+    };
 
-  const parsed = applicationSchema.safeParse(raw);
-  if (!parsed.success) {
-    return { error: parsed.error.flatten().fieldErrors };
-  }
+    const parsed = applicationSchema.safeParse(raw);
+    if (!parsed.success) {
+      return { error: parsed.error.flatten().fieldErrors };
+    }
 
-  // Verificar que el candidato tiene perfil completo
-  const { data: candidate, error: candidateError } = await supabase
-    .from("candidates")
-    .select("profile_complete")
-    .eq("id", user.id)
-    .maybeSingle(); // maybeSingle: no lanza error si no existe la fila
+    // Verificar que el candidato tiene perfil completo
+    const { data: candidate, error: candidateError } = await supabase
+      .from("candidates")
+      .select("profile_complete")
+      .eq("id", user.id)
+      .maybeSingle();
 
-  if (candidateError) {
-    console.error("[apply] candidates read error:", candidateError.message);
-  }
+    if (candidateError) {
+      console.error("[apply] candidates read error:", candidateError.message);
+    }
 
-  if (!candidate?.profile_complete) {
+    if (!candidate?.profile_complete) {
+      return {
+        error: {
+          _form: ["Debes completar tu perfil antes de postularte. Ve a Mi Perfil."],
+        },
+      };
+    }
+
+    // Verificar que la oferta está activa
+    const { data: job, error: jobError } = await supabase
+      .from("jobs")
+      .select("id, status, title, slug")
+      .eq("id", parsed.data.job_id)
+      .maybeSingle();
+
+    if (jobError) {
+      console.error("[apply] jobs read error:", jobError.message);
+    }
+
+    if (!job || job.status !== "active") {
+      return { error: { _form: ["Esta oferta no está disponible."] } };
+    }
+
+    // Verificar que no haya postulado antes
+    const { data: existing } = await supabase
+      .from("applications")
+      .select("id")
+      .eq("job_id", parsed.data.job_id)
+      .eq("candidate_id", user.id)
+      .maybeSingle();
+
+    if (existing) {
+      return { error: { _form: ["Ya te postulaste a esta oferta anteriormente."] } };
+    }
+
+    const { error: insertError } = await supabase.from("applications").insert({
+      job_id:       parsed.data.job_id,
+      candidate_id: user.id,
+      cover_letter: parsed.data.cover_letter || null,
+      status:       "pending",
+    });
+
+    if (insertError) {
+      console.error("[apply] insert error:", insertError.code, insertError.message);
+      if (insertError.code === "23503") {
+        return { error: { _form: ["Tu perfil no está activo. Complétalo en Mi Perfil."] } };
+      }
+      if (insertError.code === "23505") {
+        return { error: { _form: ["Ya te postulaste a esta oferta anteriormente."] } };
+      }
+      return { error: { _form: [`Error al enviar la postulación (${insertError.code}). Intenta de nuevo.`] } };
+    }
+
+    // Enviar email de confirmación — fire-and-forget, no puede bloquear la respuesta
+    try {
+      const { data: candidateProfile } = await supabase
+        .from("profiles")
+        .select("full_name, email")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      const { data: jobDetails } = await supabase
+        .from("jobs")
+        .select("title, city")
+        .eq("id", parsed.data.job_id)
+        .maybeSingle();
+
+      if (candidateProfile && jobDetails) {
+        sendApplicationReceivedEmail({
+          to:            candidateProfile.email,
+          candidateName: candidateProfile.full_name,
+          jobTitle:      jobDetails.title,
+          jobCity:       jobDetails.city,
+          appliedAt:     formatDate(new Date().toISOString()),
+        }).catch((emailErr) => console.error("[apply] email error:", emailErr));
+      }
+    } catch (emailSetupErr) {
+      // El email falla silenciosamente — la postulación ya fue guardada
+      console.error("[apply] email setup error:", emailSetupErr);
+    }
+
+    revalidatePath("/applications");
+    revalidatePath(`/jobs/${job.slug}`);
+    return { success: true, jobTitle: job.title };
+
+  } catch (unexpectedErr) {
+    // Capturar cualquier excepción no prevista para evitar "Application error"
+    console.error("[apply] unexpected error:", unexpectedErr);
     return {
       error: {
-        _form: [
-          "Debes completar tu perfil antes de postularte. Ve a Mi Perfil.",
-        ],
+        _form: ["Error inesperado al procesar la postulación. Intenta de nuevo."],
       },
     };
   }
-
-  // Verificar que la oferta está activa
-  const { data: job, error: jobError } = await supabase
-    .from("jobs")
-    .select("id, status, title, slug")
-    .eq("id", parsed.data.job_id)
-    .maybeSingle();
-
-  if (jobError) {
-    console.error("[apply] jobs read error:", jobError.message);
-  }
-
-  if (!job || job.status !== "active") {
-    return { error: { _form: ["Esta oferta no está disponible."] } };
-  }
-
-  // Verificar que no haya postulado antes (UNIQUE constraint en DB también lo protege)
-  const { data: existing } = await supabase
-    .from("applications")
-    .select("id")
-    .eq("job_id", parsed.data.job_id)
-    .eq("candidate_id", user.id)
-    .maybeSingle();
-
-  if (existing) {
-    return { error: { _form: ["Ya te postulaste a esta oferta anteriormente."] } };
-  }
-
-  const { error: insertError } = await supabase.from("applications").insert({
-    job_id:       parsed.data.job_id,
-    candidate_id: user.id,
-    cover_letter: parsed.data.cover_letter || null,
-    status:       "pending",
-  });
-
-  if (insertError) {
-    console.error("[apply] applications insert error:", insertError.code, insertError.message);
-    // 23503 = FK violation: candidato no tiene fila en candidates
-    if (insertError.code === "23503") {
-      return { error: { _form: ["Tu perfil no está activo. Complétalo en Mi Perfil."] } };
-    }
-    // 23505 = UNIQUE violation: ya se postuló
-    if (insertError.code === "23505") {
-      return { error: { _form: ["Ya te postulaste a esta oferta anteriormente."] } };
-    }
-    return { error: { _form: ["Error al enviar la postulación. Intenta de nuevo."] } };
-  }
-
-  // Enviar email de confirmación (sin bloquear la respuesta)
-  const { data: candidateProfile } = await supabase
-    .from("profiles")
-    .select("full_name, email")
-    .eq("id", user.id)
-    .single();
-
-  const { data: jobDetails } = await supabase
-    .from("jobs")
-    .select("title, city")
-    .eq("id", parsed.data.job_id)
-    .single();
-
-  if (candidateProfile && jobDetails) {
-    sendApplicationReceivedEmail({
-      to:            candidateProfile.email,
-      candidateName: candidateProfile.full_name,
-      jobTitle:      jobDetails.title,
-      jobCity:       jobDetails.city,
-      appliedAt:     formatDate(new Date().toISOString()),
-    }).catch(console.error); // Fire-and-forget
-  }
-
-  revalidatePath("/applications");
-  revalidatePath(`/jobs/${job.slug}`);
-  return { success: true, jobTitle: job.title };
 }
 
 // ─── Cambiar estado de postulación (admin) ────────────────────────────────────

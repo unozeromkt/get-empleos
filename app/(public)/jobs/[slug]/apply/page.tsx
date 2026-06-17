@@ -83,14 +83,18 @@ export default function ApplyPage({ params }: { params: { slug: string } }) {
     formData.set("cover_letter", coverLetter);
 
     startTransition(async () => {
-      type ApplyResult = { error?: Record<string, string[]>; success?: boolean; jobTitle?: string } | null;
-      const result = (await applyToJobAction(formData)) as ApplyResult;
-      if (result?.error) {
-        const errMsg =
-          result.error._form?.[0] ?? "Error al enviar la postulación.";
-        setErrorMsg(errMsg);
-      } else {
-        setSubmitted(true);
+      try {
+        type ApplyResult = { error?: Record<string, string[]>; success?: boolean; jobTitle?: string } | null;
+        const result = (await applyToJobAction(formData)) as ApplyResult;
+        if (result?.error) {
+          const errMsg = result.error._form?.[0] ?? "Error al enviar la postulación.";
+          setErrorMsg(errMsg);
+        } else {
+          setSubmitted(true);
+        }
+      } catch (err) {
+        console.error("Error en postulación:", err);
+        setErrorMsg("Error al procesar la postulación. Recarga la página e intenta de nuevo.");
       }
     });
   };
