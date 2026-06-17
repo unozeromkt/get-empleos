@@ -387,6 +387,48 @@ export async function uploadEmpresaLogoAction(
   return { logo_url: publicUrl };
 }
 
+// ─── Generar URL firmada de CV para empresa (usa service_role para bypasear RLS de storage) ────
+
+export async function getApplicantCVUrl(
+  applicationId: string
+): Promise<{ url?: string; error?: string }> {
+  const { supabase, company } = await requireCompany();
+  if (!company) return { error: "Sin perfil de empresa." };
+
+  // Verificar que la postulación pertenece a una oferta de esta empresa
+  const { data: app } = await supabase
+    .from("applications")
+    .select(`
+      id,
+      candidate:candidates!inner(cv_url),
+      job:jobs!inner(company_id)
+    `)
+    .eq("id", applicationId)
+    .single();
+
+  if (!app) return { error: "Postulación no encontrada." };
+
+  const jobData = app.job as { company_id: string } | { company_id: string }[] | null;
+  const jobCompanyId = Array.isArray(jobData) ? jobData[0]?.company_id : jobData?.company_id;
+
+  if (jobCompanyId !== company.id) return { error: "Sin permiso." };
+
+  const candidateData = app.candidate as { cv_url: string | null } | { cv_url: string | null }[] | null;
+  const cvUrl = Array.isArray(candidateData) ? candidateData[0]?.cv_url : candidateData?.cv_url;
+
+  if (!cvUrl) return { error: "Este candidato no tiene CV cargado." };
+
+  // Usar admin client para crear URL firmada (bypass Storage RLS)
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const admin = createAdminClient();
+  const { data, error } = await admin.storage
+    .from("cvs")
+    .createSignedUrl(cvUrl, 60 * 60); // válida 1 hora
+
+  if (error || !data) return { error: "No se pudo generar la URL de descarga." };
+  return { url: data.signedUrl };
+}
+
 // ─── Actualizar estado de postulación (empresa no toca admin_notes) ──────────
 
 export async function updateEmpresaApplicationAction(

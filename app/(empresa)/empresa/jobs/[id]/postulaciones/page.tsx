@@ -40,7 +40,7 @@ export default async function EmpresaJobApplicationsPage({ params }: Props) {
     .select(`
       id, status, cover_letter, applied_at, updated_at,
       candidate:candidates!inner(
-        id, career, years_experience, education_level, skills,
+        id, career, years_experience, education_level, skills, languages, cv_url,
         profile:profiles!inner(id, full_name, email, city, avatar_url)
       )
     `)

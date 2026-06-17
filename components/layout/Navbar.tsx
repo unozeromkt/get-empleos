@@ -6,7 +6,6 @@ import { useState, useEffect } from "react";
 import { Menu, X, User, LogIn, LayoutDashboard, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
-import { logoutAction } from "@/lib/actions/auth";
 
 type AuthUser = {
   name: string;
@@ -56,12 +55,23 @@ export function Navbar() {
 
     loadUser();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      loadUser();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") {
+        setUser(null);
+        setLoadingAuth(false);
+      } else {
+        loadUser();
+      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  const handleLogout = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    window.location.href = "/";
+  };
 
   return (
     <nav
@@ -120,16 +130,14 @@ export function Navbar() {
                       {user.name.split(" ")[0]}
                     </Button>
                   </Link>
-                  <form action={logoutAction}>
-                    <Button
-                      type="submit"
-                      size="sm"
-                      variant="ghost"
-                      className="text-brand-navy/50 hover:text-brand-navy hover:bg-brand-navy/5"
-                    >
-                      <LogOut className="w-4 h-4" />
-                    </Button>
-                  </form>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-brand-navy/50 hover:text-brand-navy hover:bg-brand-navy/5"
+                    onClick={handleLogout}
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </Button>
                 </>
               ) : (
                 <>
@@ -199,17 +207,15 @@ export function Navbar() {
                         {user.role === "admin" ? "Panel admin" : "Mi perfil"}
                       </Button>
                     </Link>
-                    <form action={logoutAction}>
-                      <Button
-                        type="submit"
-                        size="sm"
-                        variant="outline"
-                        className="w-full border-brand-navy/20 text-brand-navy rounded-full"
-                      >
-                        <LogOut className="w-4 h-4 mr-1" />
-                        Cerrar sesión
-                      </Button>
-                    </form>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full border-brand-navy/20 text-brand-navy rounded-full"
+                      onClick={handleLogout}
+                    >
+                      <LogOut className="w-4 h-4 mr-1" />
+                      Cerrar sesión
+                    </Button>
                   </>
                 ) : (
                   <>

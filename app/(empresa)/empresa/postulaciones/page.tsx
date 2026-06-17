@@ -49,7 +49,7 @@ export default async function EmpresaPostulacionesPage({ searchParams }: Props) 
       id, status, cover_letter, applied_at, updated_at,
       job:jobs!inner(id, title, city),
       candidate:candidates!inner(
-        id, career, years_experience, education_level,
+        id, career, years_experience, education_level, skills, languages, cv_url,
         profile:profiles!inner(id, full_name, email, city, avatar_url)
       )
     `)

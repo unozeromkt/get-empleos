@@ -28,11 +28,15 @@ export async function applyToJobAction(formData: FormData) {
   }
 
   // Verificar que el candidato tiene perfil completo
-  const { data: candidate } = await supabase
+  const { data: candidate, error: candidateError } = await supabase
     .from("candidates")
     .select("profile_complete")
     .eq("id", user.id)
-    .single();
+    .maybeSingle(); // maybeSingle: no lanza error si no existe la fila
+
+  if (candidateError) {
+    console.error("[apply] candidates read error:", candidateError.message);
+  }
 
   if (!candidate?.profile_complete) {
     return {
@@ -45,11 +49,15 @@ export async function applyToJobAction(formData: FormData) {
   }
 
   // Verificar que la oferta está activa
-  const { data: job } = await supabase
+  const { data: job, error: jobError } = await supabase
     .from("jobs")
-    .select("id, status, title")
+    .select("id, status, title, slug")
     .eq("id", parsed.data.job_id)
-    .single();
+    .maybeSingle();
+
+  if (jobError) {
+    console.error("[apply] jobs read error:", jobError.message);
+  }
 
   if (!job || job.status !== "active") {
     return { error: { _form: ["Esta oferta no está disponible."] } };
@@ -67,14 +75,23 @@ export async function applyToJobAction(formData: FormData) {
     return { error: { _form: ["Ya te postulaste a esta oferta anteriormente."] } };
   }
 
-  const { error } = await supabase.from("applications").insert({
+  const { error: insertError } = await supabase.from("applications").insert({
     job_id:       parsed.data.job_id,
     candidate_id: user.id,
     cover_letter: parsed.data.cover_letter || null,
     status:       "pending",
   });
 
-  if (error) {
+  if (insertError) {
+    console.error("[apply] applications insert error:", insertError.code, insertError.message);
+    // 23503 = FK violation: candidato no tiene fila en candidates
+    if (insertError.code === "23503") {
+      return { error: { _form: ["Tu perfil no está activo. Complétalo en Mi Perfil."] } };
+    }
+    // 23505 = UNIQUE violation: ya se postuló
+    if (insertError.code === "23505") {
+      return { error: { _form: ["Ya te postulaste a esta oferta anteriormente."] } };
+    }
     return { error: { _form: ["Error al enviar la postulación. Intenta de nuevo."] } };
   }
 
@@ -102,7 +119,7 @@ export async function applyToJobAction(formData: FormData) {
   }
 
   revalidatePath("/applications");
-  revalidatePath(`/jobs/${job.id}`);
+  revalidatePath(`/jobs/${job.slug}`);
   return { success: true, jobTitle: job.title };
 }
 

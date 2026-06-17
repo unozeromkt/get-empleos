@@ -2,8 +2,8 @@
 
 import { useState, useTransition, useRef, useEffect } from "react";
 import Image from "next/image";
-import { MapPin, Briefcase, ChevronDown } from "lucide-react";
-import { updateEmpresaApplicationAction } from "@/lib/actions/empresa";
+import { MapPin, Briefcase, ChevronDown, FileDown, Loader2 } from "lucide-react";
+import { updateEmpresaApplicationAction, getApplicantCVUrl } from "@/lib/actions/empresa";
 import type { ApplicationStatus } from "@/lib/types/database";
 
 const STATUS_OPTIONS: { value: ApplicationStatus; label: string; color: string }[] = [
@@ -25,6 +25,9 @@ export interface ApplicationData {
     career: string | null;
     years_experience: number;
     education_level: string | null;
+    skills: string[] | null;
+    languages: string[] | null;
+    cv_url: string | null;
     profile: {
       id: string;
       full_name: string;
@@ -44,11 +47,12 @@ export function EmpresaApplicationCard({ application, showJobTitle }: Props) {
   const { candidate } = application;
   const profile = candidate.profile;
 
-  const [status, setStatus]         = useState<ApplicationStatus>(application.status);
-  const [isPending, startTransition] = useTransition();
-  const [error, setError]           = useState("");
-  const [open, setOpen]             = useState(false);
-  const dropdownRef                 = useRef<HTMLDivElement>(null);
+  const [status, setStatus]           = useState<ApplicationStatus>(application.status);
+  const [isPending, startTransition]  = useTransition();
+  const [error, setError]             = useState("");
+  const [open, setOpen]               = useState(false);
+  const [cvLoading, setCvLoading]     = useState(false);
+  const dropdownRef                   = useRef<HTMLDivElement>(null);
 
   // Cerrar al hacer click fuera del dropdown
   useEffect(() => {
@@ -63,6 +67,17 @@ export function EmpresaApplicationCard({ application, showJobTitle }: Props) {
   }, [open]);
 
   const currentOption = STATUS_OPTIONS.find((o) => o.value === status) ?? STATUS_OPTIONS[0];
+
+  const handleDownloadCV = async () => {
+    setCvLoading(true);
+    const result = await getApplicantCVUrl(application.id);
+    setCvLoading(false);
+    if (result.url) {
+      window.open(result.url, "_blank");
+    } else {
+      setError(result.error ?? "No se pudo descargar el CV.");
+    }
+  };
 
   const handleStatusChange = (newStatus: ApplicationStatus) => {
     if (newStatus === status) return;
@@ -177,7 +192,21 @@ export function EmpresaApplicationCard({ application, showJobTitle }: Props) {
             </p>
           )}
 
-          <div className="flex items-center gap-3 mt-2">
+          {/* Skills */}
+          {candidate.skills && candidate.skills.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-2">
+              {candidate.skills.slice(0, 5).map((skill) => (
+                <span key={skill} className="text-[10px] bg-brand-light text-brand-navy/70 px-2 py-0.5 rounded-full">
+                  {skill}
+                </span>
+              ))}
+              {candidate.skills.length > 5 && (
+                <span className="text-[10px] text-gray-400">+{candidate.skills.length - 5}</span>
+              )}
+            </div>
+          )}
+
+          <div className="flex items-center gap-3 mt-2 flex-wrap">
             <p className="text-[11px] text-gray-400">Postulado el {appliedDate}</p>
             <a
               href={`mailto:${profile.email}`}
@@ -185,6 +214,19 @@ export function EmpresaApplicationCard({ application, showJobTitle }: Props) {
             >
               {profile.email}
             </a>
+            {candidate.cv_url && (
+              <button
+                onClick={handleDownloadCV}
+                disabled={cvLoading}
+                className="inline-flex items-center gap-1 text-[11px] text-brand-green hover:text-brand-green/80 font-medium disabled:opacity-60"
+              >
+                {cvLoading
+                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                  : <FileDown className="w-3 h-3" />
+                }
+                Descargar CV
+              </button>
+            )}
           </div>
 
           {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
