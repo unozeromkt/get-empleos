@@ -124,8 +124,11 @@ export async function applyToJobAction(formData: FormData) {
       console.error("[apply] email setup error:", emailSetupErr);
     }
 
-    revalidatePath("/applications");
-    revalidatePath(`/jobs/${job.slug}`);
+    // No llamar revalidatePath("/applications") aquí: ese path tiene un Server
+    // Component layout con redirect() que puede fallar en el contexto de
+    // re-render post-action de Next.js, generando "Server Components render" error.
+    // El page de /applications es un Server Component que hace fetch fresco en
+    // cada visita, así que no necesita invalidación manual de caché.
     return { success: true, jobTitle: job.title };
 
   } catch (unexpectedErr) {
