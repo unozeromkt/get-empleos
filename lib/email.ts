@@ -3,8 +3,6 @@ import { render } from "@react-email/components";
 import ApplicationReceived from "@/emails/ApplicationReceived";
 import StatusChanged from "@/emails/StatusChanged";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 const FROM = process.env.RESEND_FROM_EMAIL ?? "empleos@getcompany.co";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
@@ -18,10 +16,11 @@ export async function sendApplicationReceivedEmail(opts: {
   appliedAt:     string;
 }) {
   if (!process.env.RESEND_API_KEY) {
-    // En desarrollo sin API key, solo loguear
     console.log("[email] ApplicationReceived →", opts);
     return;
   }
+
+  const resend = new Resend(process.env.RESEND_API_KEY);
 
   const html = await render(
     ApplicationReceived({
@@ -57,6 +56,8 @@ export async function sendStatusChangedEmail(opts: {
     console.log("[email] StatusChanged →", opts);
     return;
   }
+
+  const resend = new Resend(process.env.RESEND_API_KEY);
 
   const html = await render(
     StatusChanged({
