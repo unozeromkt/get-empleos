@@ -20,6 +20,7 @@ import {
   updateJobCandidateStatusAction,
   type ScreeningRow,
 } from "@/lib/actions/ai-screening";
+import { CVDownloadButton } from "@/components/admin/CVDownloadButton";
 import { QueueProgress } from "@/components/admin/QueueProgress";
 import { useQueueDrain } from "@/lib/hooks/use-queue-drain";
 import { formatDate } from "@/lib/utils/date";
@@ -388,6 +389,8 @@ function CandidateCard({
                 <FileText className="w-4 h-4" />
               </Link>
             )}
+
+            {row.documentId && <CVDownloadButton documentId={row.documentId} />}
 
             <button
               type="button"

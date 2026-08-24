@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { redirect } from "next/navigation";
 import { Eye, CheckCircle2, XCircle, FileText, AlertTriangle, Clock } from "lucide-react";
+import { CVDownloadButton } from "@/components/admin/CVDownloadButton";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils/date";
 
@@ -47,6 +48,8 @@ interface Row {
   city: string | null;
   hasCV: boolean;
   docStatus: string | null;
+  /** Documento vigente, si lo hay: habilita la descarga. */
+  documentId: string | null;
   applications: number;
   createdAt: string;
   href: string | null;
@@ -80,6 +83,20 @@ export default async function AdminCandidatesPage({ searchParams }: Props) {
     return acc;
   }, {} as Record<string, number>);
 
+  // Documento vigente de cada candidato con cuenta, para poder descargarlo.
+  // `candidates.cv_url` guarda la ruta, pero la descarga va por documento.
+  const { data: ownDocs } = await supabase
+    .from("candidate_documents")
+    .select("id, candidate_id")
+    .not("candidate_id", "is", null)
+    .eq("is_current", true);
+
+  const docByCandidate = new Map<string, string>();
+  for (const d of ownDocs ?? []) {
+    const rec = d as Record<string, unknown>;
+    docByCandidate.set(rec.candidate_id as string, rec.id as string);
+  }
+
   const registered: Row[] = (candidatesData ?? []).map((row) => {
     const r = row as Record<string, unknown>;
     // Supabase devuelve las relaciones anidadas como array
@@ -98,6 +115,7 @@ export default async function AdminCandidatesPage({ searchParams }: Props) {
       city: null,
       hasCV: Boolean(r.cv_url),
       docStatus: null,
+      documentId: docByCandidate.get(id) ?? null,
       applications: appsPerCandidate[id] ?? 0,
       createdAt: (profile.created_at as string) ?? new Date().toISOString(),
       href: `/admin/candidates/${id}`,
@@ -174,6 +192,7 @@ export default async function AdminCandidatesPage({ searchParams }: Props) {
       city: (contact.city as string | null) ?? null,
       hasCV: true,
       docStatus: (doc.status as string) ?? null,
+      documentId: docId,
       applications: 0,
       createdAt: (doc.created_at as string) ?? new Date().toISOString(),
       href: jc ? `/admin/jobs/${jc.jobId}/candidatos/${jc.id}/reporte` : null,
@@ -293,6 +312,8 @@ export default async function AdminCandidatesPage({ searchParams }: Props) {
                   </td>
 
                   <td className="px-4 py-4">
+                    <div className="flex items-center justify-end gap-0.5">
+                      {row.documentId && <CVDownloadButton documentId={row.documentId} />}
                     {row.href ? (
                       <Link
                         href={row.href}
@@ -306,6 +327,7 @@ export default async function AdminCandidatesPage({ searchParams }: Props) {
                         <Eye className="w-4 h-4" />
                       </span>
                     )}
+                    </div>
                   </td>
                 </tr>
               ))}
