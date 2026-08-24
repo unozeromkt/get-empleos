@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Plus, Eye, Pencil, Users, Building2, Briefcase } from "lucide-react";
+import { Plus, Eye, Pencil, Users, Building2, Briefcase, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { JobStatusBadge } from "@/components/jobs/JobStatusBadge";
 import { AdminJobReviewActions } from "@/components/admin/AdminJobReviewActions";
@@ -97,6 +97,15 @@ export default async function AdminJobsPage({ searchParams }: Props) {
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <JobsSearchBar />
+          <Link href="/admin/jobs/new-ai">
+            <Button
+              variant="outline"
+              className="border-brand-purple text-brand-purple hover:bg-brand-purple/5"
+            >
+              <Sparkles className="w-4 h-4 mr-1.5" />
+              Crear con IA
+            </Button>
+          </Link>
           <Link href="/admin/jobs/new">
             <Button className="bg-brand-blue hover:bg-brand-blue/90 text-white">
               <Plus className="w-4 h-4 mr-1.5" />
@@ -182,9 +191,13 @@ export default async function AdminJobsPage({ searchParams }: Props) {
                     className={`transition-colors ${isPendingReview ? "bg-amber-50/30 hover:bg-amber-50/60" : "hover:bg-gray-50"}`}
                   >
                     <td className="px-5 py-4">
-                      <div className="font-medium text-brand-navy line-clamp-1 max-w-[200px]">
+                      {/* El título es la entrada natural a la ficha de la oferta */}
+                      <Link
+                        href={`/admin/jobs/${job.id}/candidatos`}
+                        className="font-medium text-brand-navy line-clamp-1 max-w-[200px] hover:text-brand-blue hover:underline"
+                      >
                         {job.title}
-                      </div>
+                      </Link>
                       {job.featured && (
                         <span className="text-xs text-brand-yellow">★ Destacada</span>
                       )}
@@ -218,10 +231,14 @@ export default async function AdminJobsPage({ searchParams }: Props) {
                     </td>
 
                     <td className="px-4 py-4 text-center hidden md:table-cell">
-                      <span className="inline-flex items-center gap-1 text-gray-700">
+                      <Link
+                        href={`/admin/jobs/${job.id}/candidatos`}
+                        className="inline-flex items-center gap-1 text-gray-700 hover:text-brand-blue"
+                        title="Ver candidatos de esta oferta"
+                      >
                         <Users className="w-3.5 h-3.5 text-gray-400" />
                         {appsPerJob[job.id] ?? 0}
-                      </span>
+                      </Link>
                     </td>
 
                     <td className="px-4 py-4 hidden lg:table-cell text-gray-500 text-xs">
@@ -235,9 +252,9 @@ export default async function AdminJobsPage({ searchParams }: Props) {
                       ) : (
                         <div className="flex items-center gap-1.5 justify-end">
                           <Link
-                            href={`/admin/jobs/${job.id}/applications`}
+                            href={`/admin/jobs/${job.id}/candidatos`}
                             className="p-1.5 rounded-lg text-gray-400 hover:text-brand-blue hover:bg-brand-blue/10 transition-colors"
-                            title="Ver postulaciones"
+                            title="Ver candidatos, perfil y subir hojas de vida"
                           >
                             <Eye className="w-4 h-4" />
                           </Link>

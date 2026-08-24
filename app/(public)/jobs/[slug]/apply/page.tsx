@@ -13,6 +13,15 @@ import { useEffect } from "react";
 import type { JobWithArea } from "@/lib/types/database";
 import type { CandidateWithProfile } from "@/lib/types/database";
 
+/** Mismos 3 requisitos que `isProfileCompleteForApplying`, en mensaje para el candidato. */
+function missingRequirements(candidate: CandidateWithProfile): string[] {
+  const missing: string[] = [];
+  if (!candidate.profile.full_name?.trim()) missing.push("tu nombre");
+  if (!candidate.profile.phone?.trim()) missing.push("tu teléfono");
+  if (!candidate.cv_url) missing.push("tu hoja de vida");
+  return missing;
+}
+
 export default function ApplyPage({ params }: { params: { slug: string } }) {
   const [job,            setJob]            = useState<JobWithArea | null>(null);
   const [candidate,      setCandidate]      = useState<CandidateWithProfile | null>(null);
@@ -204,11 +213,20 @@ export default function ApplyPage({ params }: { params: { slug: string } }) {
                     <p className="font-semibold text-yellow-800 mb-1">
                       {!candidate ? "Perfil no encontrado" : "Perfil incompleto"}
                     </p>
-                    <p className="text-sm text-yellow-700 mb-4">
-                      {!candidate
-                        ? "Debes completar tu perfil antes de postularte."
-                        : "Faltan datos obligatorios en tu perfil. Complétalo para continuar."}
-                    </p>
+                    {!candidate ? (
+                      <p className="text-sm text-yellow-700 mb-4">
+                        Debes completar tu perfil antes de postularte.
+                      </p>
+                    ) : (
+                      <>
+                        <p className="text-sm text-yellow-700 mb-2">Para postularte, te falta:</p>
+                        <ul className="text-sm text-yellow-800 font-medium mb-4 space-y-0.5">
+                          {missingRequirements(candidate).map((field) => (
+                            <li key={field}>• {field}</li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
                     <Link href="/profile">
                       <Button size="sm" className="bg-brand-blue text-white">
                         Completar mi perfil

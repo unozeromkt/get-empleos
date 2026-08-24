@@ -87,6 +87,9 @@ export interface Job {
   published_at: string | null;
   created_at: string;
   updated_at: string;
+  // Añadidos por la migración 010 — nullable, las ofertas manuales no los usan
+  current_profile_version_id?: string | null;
+  ai_generated?: boolean;
 }
 
 export interface Company {
@@ -106,6 +109,8 @@ export interface Company {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  /** Get Company, dueña del portal. Migración 014. */
+  is_platform_owner?: boolean;
 }
 
 export interface CompanyWithProfile extends Company {
