@@ -4,6 +4,7 @@ import { Plus, Eye, Pencil, Users, Building2, Briefcase, Sparkles } from "lucide
 import { Button } from "@/components/ui/button";
 import { JobStatusBadge } from "@/components/jobs/JobStatusBadge";
 import { AdminJobReviewActions } from "@/components/admin/AdminJobReviewActions";
+import { JobRowActions } from "@/components/admin/JobRowActions";
 import { JobsSearchBar } from "@/components/admin/JobsSearchBar";
 import { createClient } from "@/lib/supabase/server";
 import { formatSalaryRange } from "@/lib/utils/salary";
@@ -17,6 +18,7 @@ const STATUS_TABS = [
   { value: "draft",          label: "Borrador" },
   { value: "paused",         label: "Pausadas" },
   { value: "closed",         label: "Cerradas" },
+  { value: "archived",       label: "Papelera" },
 ];
 
 interface Props {
@@ -53,6 +55,9 @@ export default async function AdminJobsPage({ searchParams }: Props) {
 
   if (searchParams.status) {
     query = query.eq("status", searchParams.status);
+  } else {
+    // La papelera tiene su propia pestaña: no debe ensuciar el listado general
+    query = query.neq("status", "archived");
   }
   if (searchParams.company) {
     query = query.eq("company_id", searchParams.company);
@@ -251,20 +256,30 @@ export default async function AdminJobsPage({ searchParams }: Props) {
                         <AdminJobReviewActions jobId={job.id} />
                       ) : (
                         <div className="flex items-center gap-1.5 justify-end">
-                          <Link
-                            href={`/admin/jobs/${job.id}/candidatos`}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-brand-blue hover:bg-brand-blue/10 transition-colors"
-                            title="Ver candidatos, perfil y subir hojas de vida"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Link>
-                          <Link
-                            href={`/admin/jobs/${job.id}/edit`}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-brand-blue hover:bg-brand-blue/10 transition-colors"
-                            title="Editar oferta"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </Link>
+                          {job.status !== "archived" && (
+                            <>
+                              <Link
+                                href={`/admin/jobs/${job.id}/candidatos`}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-brand-blue hover:bg-brand-blue/10 transition-colors"
+                                title="Ver candidatos, perfil y subir hojas de vida"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </Link>
+                              <Link
+                                href={`/admin/jobs/${job.id}/edit`}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-brand-blue hover:bg-brand-blue/10 transition-colors"
+                                title="Editar oferta"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Link>
+                            </>
+                          )}
+                          <JobRowActions
+                            jobId={job.id}
+                            status={job.status}
+                            title={job.title}
+                            applications={appsPerJob[job.id] ?? 0}
+                          />
                         </div>
                       )}
                     </td>

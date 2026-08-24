@@ -6,6 +6,7 @@ const STATUS_MAP: Record<JobStatus, { label: string; className: string }> = {
   paused:         { label: "Pausada",     className: "bg-yellow-100 text-yellow-700" },
   closed:         { label: "Cerrada",     className: "bg-red-100 text-red-600" },
   pending_review: { label: "En revisión", className: "bg-amber-100 text-amber-700" },
+  archived:       { label: "En papelera", className: "bg-gray-200 text-gray-600" },
 };
 
 export function JobStatusBadge({ status }: { status: JobStatus }) {

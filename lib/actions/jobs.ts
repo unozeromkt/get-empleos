@@ -228,9 +228,96 @@ export async function rejectJobAction(jobId: string, reviewNotes: string) {
 
 // ─── Eliminar oferta ──────────────────────────────────────────────────────────
 
+// ─── Papelera ─────────────────────────────────────────────────────────────────
+
+/**
+ * Envía una oferta a la papelera.
+ *
+ * Se guarda el estado de origen para poder devolverla exactamente a donde
+ * estaba: restaurar una oferta activa dejándola en 'draft' obligaría al admin
+ * a volver a publicarla, y es justo el error que hace que nadie use la papelera.
+ */
+export async function archiveJobAction(jobId: string) {
+  await requireAdmin();
+  const supabase = await createClient();
+
+  const { data: job } = await supabase
+    .from("jobs")
+    .select("status")
+    .eq("id", jobId)
+    .single();
+
+  if (!job) return { error: "La oferta no existe." };
+  if (job.status === "archived") return { success: true };
+
+  const { error } = await supabase
+    .from("jobs")
+    .update({
+      status: "archived",
+      archived_at: new Date().toISOString(),
+      archived_from: job.status,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", jobId);
+
+  if (error) return { error: "No se pudo archivar la oferta." };
+
+  revalidatePath("/admin/jobs");
+  revalidatePath("/jobs");
+  return { success: true };
+}
+
+/** Devuelve una oferta archivada a su estado anterior. */
+export async function restoreJobAction(jobId: string) {
+  await requireAdmin();
+  const supabase = await createClient();
+
+  const { data: job } = await supabase
+    .from("jobs")
+    .select("status, archived_from")
+    .eq("id", jobId)
+    .single();
+
+  if (!job) return { error: "La oferta no existe." };
+  if (job.status !== "archived") return { error: "Esta oferta no está archivada." };
+
+  const { error } = await supabase
+    .from("jobs")
+    .update({
+      status: job.archived_from ?? "draft",
+      archived_at: null,
+      archived_from: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", jobId);
+
+  if (error) return { error: "No se pudo restaurar la oferta." };
+
+  revalidatePath("/admin/jobs");
+  revalidatePath("/jobs");
+  return { success: true };
+}
+
+/**
+ * Borrado definitivo. Solo desde la papelera: `applications` tiene
+ * ON DELETE CASCADE sobre job_id, así que esto destruye las postulaciones de
+ * candidatos reales sin vuelta atrás. Obligar a archivar primero convierte un
+ * clic accidental en dos decisiones deliberadas.
+ */
 export async function deleteJobAction(jobId: string) {
   await requireAdmin();
   const supabase = await createClient();
+
+  const { data: job } = await supabase
+    .from("jobs")
+    .select("status")
+    .eq("id", jobId)
+    .single();
+
+  if (!job) return { error: "La oferta no existe." };
+  if (job.status !== "archived") {
+    return { error: "Archiva la oferta antes de eliminarla definitivamente." };
+  }
 
   const { error } = await supabase.from("jobs").delete().eq("id", jobId);
 

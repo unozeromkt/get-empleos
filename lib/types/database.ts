@@ -1,6 +1,12 @@
 export type Role = "admin" | "candidate" | "company";
 
-export type JobStatus = "draft" | "pending_review" | "active" | "paused" | "closed";
+export type JobStatus =
+  | "draft"
+  | "pending_review"
+  | "active"
+  | "paused"
+  | "closed"
+  | "archived";
 export type JobModality = "presencial" | "remoto" | "hibrido";
 export type ContractType = "tiempo_completo" | "tiempo_parcial" | "temporal" | "por_obra";
 export type EducationLevel =
@@ -90,6 +96,9 @@ export interface Job {
   // Añadidos por la migración 010 — nullable, las ofertas manuales no los usan
   current_profile_version_id?: string | null;
   ai_generated?: boolean;
+  // Añadidos por la migración 020 — solo tienen valor mientras está en papelera
+  archived_at?: string | null;
+  archived_from?: JobStatus | null;
 }
 
 export interface Company {
