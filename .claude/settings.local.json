@@ -11,7 +11,8 @@
       "Bash(New-Item -ItemType File -Path \"c:\\\\Users\\\\rolan\\\\OneDrive\\\\Documents\\\\web_dev\\\\get-empleos\\\\.env.local.example\" -Force)",
       "Bash(Out-Null)",
       "Bash(Write-Host \"created\")",
-      "PowerShell(New-Item -ItemType File -Path \"c:\\\\Users\\\\rolan\\\\OneDrive\\\\Documents\\\\web_dev\\\\get-empleos\\\\.env.local.example\" -Force)"
+      "PowerShell(New-Item -ItemType File -Path \"c:\\\\Users\\\\rolan\\\\OneDrive\\\\Documents\\\\web_dev\\\\get-empleos\\\\.env.local.example\" -Force)",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\);console.log\\(j.error?\\('ERROR: '+j.error.message\\):\\('OK: modelo '+j.id+' disponible'\\)\\);}catch\\(e\\){console.log\\('respuesta no-JSON:',d.slice\\(0,200\\)\\);}}\\)\")"
     ]
   }
 }

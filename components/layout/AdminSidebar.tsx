@@ -5,7 +5,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Briefcase, Users, FileText,
-  PlusCircle, Settings, LogOut, Building2,
+  PlusCircle, Settings, LogOut, Building2, Sparkles,
 } from "lucide-react";
 import { logoutAction } from "@/lib/actions/auth";
 
@@ -35,6 +35,11 @@ const NAV_ITEMS = [
     label: "Candidatos",
     href: "/admin/candidates",
     icon: Users,
+  },
+  {
+    label: "Búsqueda de talento",
+    href: "/admin/talento",
+    icon: Sparkles,
   },
 ];
 

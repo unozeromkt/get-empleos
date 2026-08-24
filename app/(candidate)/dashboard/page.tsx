@@ -1,18 +1,19 @@
 import Link from "next/link";
 import Image from "next/image";
 import { redirect } from "next/navigation";
-import { ArrowRight, FileText, Search, CheckCircle2, Clock, AlertCircle, User } from "lucide-react";
+import { ArrowRight, FileText, Search, CheckCircle2, Clock, AlertCircle, User, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ApplicationCard } from "@/components/candidates/ApplicationCard";
 import { createClient } from "@/lib/supabase/server";
 import type { ApplicationWithDetails, JobWithCompany } from "@/lib/types/database";
 
+// Estos 3 son los únicos que bloquean la postulación (lib/utils/profile-complete.ts).
+// El resto del formulario (educación, experiencia, disponibilidad...) es
+// opcional: enriquece el matching, pero no aparece aquí porque no es requisito.
 const PROFILE_STEPS = [
-  { key: "full_name",        label: "Datos personales" },
-  { key: "education_level",  label: "Nivel educativo" },
-  { key: "career",           label: "Información laboral" },
-  { key: "availability",     label: "Disponibilidad" },
-  { key: "cv_url",           label: "Hoja de vida (CV)" },
+  { key: "cv_url",    label: "Hoja de vida (CV)" },
+  { key: "full_name", label: "Nombre completo" },
+  { key: "phone",     label: "Teléfono" },
 ];
 
 export default async function DashboardPage() {
@@ -29,7 +30,7 @@ export default async function DashboardPage() {
     { data: applicationsData },
     { data: suggestedJobsData },
   ] = await Promise.all([
-    supabase.from("profiles").select("full_name, city, avatar_url, updated_at").eq("id", user.id).single(),
+    supabase.from("profiles").select("full_name, phone, city, avatar_url, updated_at").eq("id", user.id).single(),
     supabase.from("candidates").select("*").eq("id", user.id).single(),
     supabase
       .from("applications")
@@ -75,14 +76,13 @@ export default async function DashboardPage() {
     return acc;
   }, {} as Record<string, number>);
 
-  // Calcular completitud del perfil
+  // full_name y phone viven en `profiles`; cv_url en `candidates`
   const steps = PROFILE_STEPS.map((step) => ({
     label: step.label,
-    done: step.key === "cv_url"
-      ? !!candidateData?.cv_url
-      : step.key === "full_name"
-        ? !!profileData?.full_name
-        : !!(candidateData as Record<string, unknown> | null)?.[step.key],
+    done:
+      step.key === "cv_url"
+        ? !!candidateData?.cv_url
+        : !!(profileData as Record<string, unknown> | null)?.[step.key],
   }));
   const profilePercent = Math.round(
     (steps.filter((s) => s.done).length / steps.length) * 100
@@ -115,19 +115,48 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Alerta si perfil incompleto */}
-      {profilePercent < 100 && (
-        <div className="bg-brand-yellow/10 border border-brand-yellow/20 rounded-2xl p-4 flex items-center gap-3">
-          <AlertCircle className="w-5 h-5 text-yellow-600 shrink-0" />
-          <p className="text-sm text-yellow-700 flex-1">
-            Tu perfil está al <strong>{profilePercent}%</strong>. Complétalo para postularte a las ofertas.
-          </p>
-          <Link href="/profile">
-            <Button size="sm" className="bg-brand-yellow text-brand-navy font-semibold hover:bg-brand-yellow/90">
-              Completar perfil
-            </Button>
-          </Link>
+      {/* Sin CV: es LO PRIMERO que debe hacer. La IA completa el resto del
+          perfil a partir del documento, así que pedirle datos a mano antes
+          sería hacerle escribir lo que ya vamos a extraer. */}
+      {!candidateData?.cv_url ? (
+        <div className="bg-gradient-to-br from-brand-purple/10 to-brand-blue/10 border-2 border-brand-purple/20 rounded-2xl p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-brand-purple/15 flex items-center justify-center shrink-0">
+              <Sparkles className="w-6 h-6 text-brand-purple" />
+            </div>
+            <div className="flex-1">
+              <p className="text-xs font-semibold text-brand-purple uppercase tracking-wide mb-1">
+                Empieza aquí
+              </p>
+              <h2 className="font-display text-lg font-bold text-brand-navy mb-1">
+                Sube tu hoja de vida
+              </h2>
+              <p className="text-sm text-gray-600">
+                Nuestra inteligencia artificial la lee y completa tu perfil por ti: experiencia,
+                formación, habilidades e idiomas. Solo tendrás que revisar que todo esté bien.
+              </p>
+            </div>
+            <Link href="/profile" className="shrink-0">
+              <Button className="bg-brand-purple hover:bg-brand-purple/90 text-white w-full sm:w-auto">
+                Subir mi CV
+              </Button>
+            </Link>
+          </div>
         </div>
+      ) : (
+        profilePercent < 100 && (
+          <div className="bg-brand-yellow/10 border border-brand-yellow/20 rounded-2xl p-4 flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-yellow-600 shrink-0" />
+            <p className="text-sm text-yellow-700 flex-1">
+              Tu perfil está al <strong>{profilePercent}%</strong>. Complétalo para postularte a las ofertas.
+            </p>
+            <Link href="/profile">
+              <Button size="sm" className="bg-brand-yellow text-brand-navy font-semibold hover:bg-brand-yellow/90">
+                Completar perfil
+              </Button>
+            </Link>
+          </div>
+        )
       )}
 
       {/* Stats */}

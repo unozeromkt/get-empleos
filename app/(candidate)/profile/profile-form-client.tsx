@@ -1,7 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, useTransition, useRef } from "react";
-import { CheckCircle2, Upload, ExternalLink, Save, X, FileText, RefreshCw } from "lucide-react";
+import { CheckCircle2, Upload, ExternalLink, Save, X, FileText, RefreshCw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AvatarUpload } from "@/components/profile/AvatarUpload";
@@ -31,6 +32,7 @@ interface Props {
 }
 
 export function ProfileFormClient({ profile, candidate }: Props) {
+  const router = useRouter();
   const [saved,        setSaved]        = useState(false);
   const [saveError,    setSaveError]    = useState("");
   const [isPending,    startTransition] = useTransition();
@@ -98,9 +100,16 @@ export function ProfileFormClient({ profile, candidate }: Props) {
 
     if (result?.error) {
       setCvError(typeof result.error === "string" ? result.error : "Error al subir el CV.");
-    } else {
-      setHasCv(true);
-      setCvUpdatedAt(new Date().toISOString());
+      return;
+    }
+
+    setHasCv(true);
+    setCvUpdatedAt(new Date().toISOString());
+
+    // La IA está leyendo el CV: llevarlo a revisar lo extraído en vez de
+    // dejarlo rellenando a mano lo que ya vamos a completar por él
+    if (result?.documentId) {
+      router.push("/profile/review");
     }
   };
 
@@ -110,6 +119,54 @@ export function ProfileFormClient({ profile, candidate }: Props) {
         <h1 className="font-display text-2xl font-bold text-brand-navy">Mi perfil</h1>
         <p className="text-gray-500 text-sm mt-1">Mantén tu información actualizada para aumentar tus posibilidades.</p>
       </div>
+
+      {/* CV primero: la IA rellena el perfil, así el candidato no tiene que
+          escribir a mano lo que ya está en su hoja de vida (plan §7b.2) */}
+      {!hasCv && (
+        <div className="bg-brand-navy text-white rounded-2xl p-6 relative overflow-hidden">
+          <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-brand-purple/30 blur-3xl" />
+          <div className="absolute -right-16 bottom-0 w-32 h-32 rounded-full bg-brand-blue/30 blur-3xl" />
+
+          <div className="relative">
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-white/15 px-2.5 py-1 rounded-full mb-3">
+              <Sparkles className="w-3.5 h-3.5" />
+              Paso 1 de 2
+            </span>
+
+            <h2 className="font-display text-xl font-bold mb-2">
+              Empieza subiendo tu hoja de vida
+            </h2>
+            <p className="text-white/80 text-sm max-w-xl">
+              Nuestra inteligencia artificial la lee y completa tu perfil por ti: experiencia,
+              formación, habilidades e idiomas. Después solo tienes que revisar que todo esté
+              bien y ya podrás postularte.
+            </p>
+
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={cvPending}
+              className="mt-4 inline-flex items-center gap-2 bg-white text-brand-navy font-medium text-sm px-4 py-2.5 rounded-xl hover:bg-white/90 transition-colors disabled:opacity-60"
+            >
+              {cvPending ? (
+                <>
+                  <span className="w-4 h-4 rounded-full border-2 border-brand-navy/30 border-t-brand-navy animate-spin" />
+                  Subiendo…
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4" />
+                  Subir mi hoja de vida
+                </>
+              )}
+            </button>
+
+            <p className="text-white/50 text-xs mt-3">
+              PDF o Word · Máx. 5 MB · Tus datos son privados y solo los ve el equipo de selección.
+            </p>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Foto y CV */}
@@ -128,7 +185,7 @@ export function ProfileFormClient({ profile, candidate }: Props) {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf"
+                accept=".pdf,.docx"
                 className="hidden"
                 onChange={handleCVUpload}
               />
@@ -188,7 +245,11 @@ export function ProfileFormClient({ profile, candidate }: Props) {
                         Arrastra tu CV aquí o{" "}
                         <span className="text-brand-blue font-medium">selecciona un archivo</span>
                       </p>
-                      <p className="text-xs text-gray-400 mt-1">PDF · Máx. 5 MB</p>
+                      <p className="text-xs text-brand-purple mt-1.5 flex items-center justify-center gap-1">
+                        <Sparkles className="w-3 h-3" />
+                        Completaremos tu perfil automáticamente
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">PDF o Word · Máx. 5 MB</p>
                     </>
                   )}
                 </div>
@@ -218,10 +279,10 @@ export function ProfileFormClient({ profile, candidate }: Props) {
             <Field label="Correo electrónico">
               <Input type="email" value={form.email} readOnly className="bg-gray-50 text-gray-400 cursor-not-allowed" />
             </Field>
-            <Field label="Teléfono">
+            <Field label="Teléfono" hint="requerido para postularte">
               <Input value={form.phone} onChange={(e) => set("phone", e.target.value)} placeholder="300 123 4567" />
             </Field>
-            <Field label="Ciudad de residencia">
+            <Field label="Ciudad de residencia" hint="opcional">
               <Input value={form.city} onChange={(e) => set("city", e.target.value)} placeholder="Medellín" />
             </Field>
           </div>
@@ -229,7 +290,11 @@ export function ProfileFormClient({ profile, candidate }: Props) {
 
         {/* Información profesional */}
         <div className="bg-white rounded-2xl p-6 border border-gray-100">
-          <h2 className="font-display font-semibold text-brand-navy mb-4">Información profesional</h2>
+          <h2 className="font-display font-semibold text-brand-navy mb-1">Información profesional</h2>
+          <p className="text-xs text-gray-400 mb-4">
+            Todo esto es opcional — no bloquea tu postulación, pero mejora qué tan bien te
+            comparamos con cada oferta.
+          </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Carrera o área de estudio">
               <Input

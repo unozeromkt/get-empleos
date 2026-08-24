@@ -100,7 +100,12 @@ function jobToForm(job: JobWithArea): FormData {
 }
 
 export function JobForm({ job, companies = [] }: { job?: JobWithArea; companies?: Company[] }) {
-  const [form,     setForm]     = useState<FormData>(job ? jobToForm(job) : DEFAULT_FORM);
+  // La mayoría de ofertas son propias de Get Company, así que viene preseleccionada
+  const platformOwnerId = companies.find((c) => c.is_platform_owner)?.id ?? "";
+
+  const [form, setForm] = useState<FormData>(
+    job ? jobToForm(job) : { ...DEFAULT_FORM, company_id: platformOwnerId }
+  );
   const [errors,   setErrors]   = useState<Record<string, string[]>>({});
   const [isPending, startTransition] = useTransition();
 
@@ -308,6 +313,24 @@ export function JobForm({ job, companies = [] }: { job?: JobWithArea; companies?
 
       {/* Opciones */}
       <Section title="Opciones de publicación">
+        {/*
+          Este selector faltaba: al editar, jobToForm copiaba job.status y el
+          botón lo reenviaba igual, así que una oferta en borrador no se podía
+          publicar nunca desde el formulario.
+        */}
+        <Field label="Estado">
+          <select
+            value={form.status}
+            onChange={(e) => set("status", e.target.value)}
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <option value="active">Activa — visible en el portal público</option>
+            <option value="draft">Borrador — no visible</option>
+            <option value="paused">Pausada — no visible, se puede reactivar</option>
+            <option value="closed">Cerrada — ya no recibe postulaciones</option>
+          </select>
+        </Field>
+
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="flex items-center gap-3">
             <input
@@ -326,14 +349,20 @@ export function JobForm({ job, companies = [] }: { job?: JobWithArea; companies?
 
       {/* Acciones */}
       <div className="flex items-center justify-between gap-3 pt-2">
-        <button
-          type="button"
-          onClick={(e) => handleSubmit(e as unknown as React.FormEvent, true)}
-          disabled={isPending}
-          className="text-sm text-gray-500 hover:text-brand-navy underline disabled:opacity-50"
-        >
-          Guardar como borrador
-        </button>
+        {/* Atajo solo al crear. Al editar mandaría sobre el selector de estado
+            y sería contradictorio tener dos controles para lo mismo. */}
+        {job ? (
+          <span />
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => handleSubmit(e as unknown as React.FormEvent, true)}
+            disabled={isPending}
+            className="text-sm text-gray-500 hover:text-brand-navy underline disabled:opacity-50"
+          >
+            Guardar como borrador
+          </button>
+        )}
         <div className="flex items-center gap-3">
           <Button
             type="submit"

@@ -1,8 +1,14 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { aiConfig, extensionForMime, isAllowedMimeType } from "@/lib/ai/config";
+import { sha256 } from "@/lib/documents/hash";
+import { enqueueRun } from "@/lib/queue/enqueue";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { isProfileCompleteForApplying } from "@/lib/utils/profile-complete";
 import { candidateProfileSchema } from "@/lib/validations/candidate";
 
 // ─── Actualizar perfil del candidato ─────────────────────────────────────────
@@ -62,15 +68,19 @@ export async function updateCandidateProfileAction(formData: FormData) {
     return { error: { _form: ["Error al guardar los datos personales."] } };
   }
 
-  // Calcular si el perfil está completo (campos mínimos rellenos)
-  const profile_complete = !!(
-    parsed.data.full_name &&
-    parsed.data.city &&
-    parsed.data.education_level &&
-    parsed.data.career &&
-    parsed.data.years_experience !== null &&
-    parsed.data.availability
-  );
+  // El formulario no incluye el CV: se consulta el vigente para saber si el
+  // perfil ya queda completo (nombre + teléfono + CV, ver lib/utils/profile-complete.ts)
+  const { data: existingCandidate } = await supabase
+    .from("candidates")
+    .select("cv_url")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const profile_complete = isProfileCompleteForApplying({
+    fullName: parsed.data.full_name,
+    phone: parsed.data.phone,
+    cvUrl: existingCandidate?.cv_url ?? null,
+  });
 
   // Upsert tabla candidates
   const { error: candidateError } = await supabase
@@ -115,47 +125,120 @@ export async function uploadCVAction(formData: FormData) {
 
   const file = formData.get("cv") as File;
   if (!file || file.size === 0) {
-    return { error: "Selecciona un archivo PDF." };
+    return { error: "Selecciona un archivo PDF o Word." };
   }
 
-  // Validaciones
-  if (file.type !== "application/pdf") {
-    return { error: "El archivo debe ser un PDF." };
+  if (!isAllowedMimeType(file.type)) {
+    return { error: "El archivo debe ser PDF o Word (.docx)." };
   }
   if (file.size > 5 * 1024 * 1024) {
     return { error: "El archivo no puede superar 5 MB." };
   }
 
-  const filePath = `${user.id}/cv.pdf`;
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const hash = sha256(buffer);
 
-  // Subir al bucket cvs (sobreescribe si ya existe)
+  // Ruta versionada con UUID. Antes era la ruta fija '{user_id}/cv.pdf' con
+  // upsert, que destruía el CV anterior — y sin el documento original no se
+  // puede explicar un resultado de matching histórico (spec §22).
+  const filePath = `${user.id}/${randomUUID()}.${extensionForMime(file.type)}`;
+
   const { error: uploadError } = await supabase.storage
     .from("cvs")
-    .upload(filePath, file, {
-      contentType: "application/pdf",
-      upsert: true,
-    });
+    .upload(filePath, buffer, { contentType: file.type, upsert: false });
 
   if (uploadError) {
     return { error: "Error al subir el archivo. Intenta de nuevo." };
   }
 
-  // Guardar la URL en la tabla candidates
-  const { error: updateError } = await supabase
-    .from("candidates")
-    .update({
-      cv_url:       filePath,
-      cv_updated_at: new Date().toISOString(),
+  // Calcular la versión siguiente y desmarcar la anterior como vigente
+  const { data: previous } = await supabase
+    .from("candidate_documents")
+    .select("id, version")
+    .eq("candidate_id", user.id)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const nextVersion = ((previous?.version as number) ?? 0) + 1;
+
+  if (previous) {
+    await supabase
+      .from("candidate_documents")
+      .update({ is_current: false })
+      .eq("candidate_id", user.id)
+      .eq("is_current", true);
+  }
+
+  const { data: doc, error: docError } = await supabase
+    .from("candidate_documents")
+    .insert({
+      candidate_id: user.id,
+      uploaded_by: user.id,
+      storage_path: filePath,
+      original_filename: file.name.slice(0, 255),
+      mime_type: file.type,
+      size_bytes: file.size,
+      sha256: hash,
+      version: nextVersion,
+      is_current: true,
+      status: "uploaded",
     })
-    .eq("id", user.id);
+    .select("id")
+    .single();
+
+  if (docError || !doc) {
+    // No dejar el archivo huérfano en Storage si falla el registro
+    await supabase.storage.from("cvs").remove([filePath]);
+    return { error: "Error al registrar el CV. Intenta de nuevo." };
+  }
+
+  // Con el flujo CV-first, subir el CV puede ser la PRIMERA acción de un
+  // candidato nuevo — todavía sin fila en `candidates`, que hasta ahora solo
+  // se creaba al guardar el formulario de perfil. Un .update() en ese caso
+  // afecta 0 filas sin avisar y el cv_url se pierde en silencio. Por eso aquí
+  // es upsert, no update.
+  const { data: profileRow } = await supabase
+    .from("profiles")
+    .select("full_name, phone")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const profile_complete = isProfileCompleteForApplying({
+    fullName: profileRow?.full_name,
+    phone: profileRow?.phone,
+    cvUrl: filePath,
+  });
+
+  const { error: updateError } = await supabase.from("candidates").upsert(
+    {
+      id: user.id,
+      cv_url: filePath,
+      cv_updated_at: new Date().toISOString(),
+      profile_complete,
+    },
+    { onConflict: "id" }
+  );
 
   if (updateError) {
     return { error: "CV subido pero error al registrar la ruta." };
   }
 
+  // Encolar la extracción con service_role: la cola es infraestructura del
+  // sistema, no datos del usuario. Esta acción ya verificó que el CV es suyo,
+  // así que no hace falta ampliar la RLS de ai_processing_runs a candidatos.
+  if (aiConfig.enabled && aiConfig.features.resumeParsing) {
+    await enqueueRun(createAdminClient(), {
+      runType: "extract_document_text",
+      entityType: "candidate_document",
+      entityId: doc.id as string,
+      inputHash: hash,
+    });
+  }
+
   revalidatePath("/profile");
   revalidatePath("/dashboard");
-  return { success: true, cv_url: filePath };
+  return { success: true, cv_url: filePath, documentId: doc.id as string };
 }
 
 // ─── Subir foto de perfil (avatar) ───────────────────────────────────────────

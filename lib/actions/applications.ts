@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { enqueueRun } from "@/lib/queue/enqueue";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { applicationSchema, applicationStatusSchema } from "@/lib/validations/application";
 import { sendApplicationReceivedEmail, sendStatusChangedEmail } from "@/lib/email";
@@ -94,6 +96,30 @@ export async function applyToJobAction(formData: FormData) {
         return { error: { _form: ["Ya te postulaste a esta oferta anteriormente."] } };
       }
       return { error: { _form: [`Error al enviar la postulación (${insertError.code}). Intenta de nuevo.`] } };
+    }
+
+    // Encolar el cálculo del match. Igual que el email: no puede bloquear ni
+    // romper la postulación, que ya está guardada. El trigger de la migración
+    // 015 creó el job_candidate espejo; aquí solo se pide su evaluación.
+    try {
+      const { data: jobCandidate } = await supabase
+        .from("job_candidates")
+        .select("id, profile_version_id")
+        .eq("job_id", parsed.data.job_id)
+        .eq("candidate_id", user.id)
+        .maybeSingle();
+
+      // Sin perfil estructurado no hay nada que evaluar todavía; se calculará
+      // cuando el candidato procese su hoja de vida
+      if (jobCandidate?.profile_version_id) {
+        await enqueueRun(createAdminClient(), {
+          runType: "calculate_match",
+          entityType: "job_candidate",
+          entityId: jobCandidate.id as string,
+        });
+      }
+    } catch (matchErr) {
+      console.error("[apply] no se pudo encolar el match:", matchErr);
     }
 
     // Enviar email de confirmación — fire-and-forget, no puede bloquear la respuesta
