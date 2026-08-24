@@ -18,8 +18,8 @@ import {
   confirmJobProfileAction,
   getJobDocumentStatusAction,
   retryJobDocumentAction,
-  runWorkerNowAction,
 } from "@/lib/actions/ai-jobs";
+import { useQueueDrain } from "@/lib/hooks/use-queue-drain";
 import { missingFieldsForPublish, type JobProfile } from "@/lib/ai/schemas/job-profile";
 import type { Company, JobArea } from "@/lib/types/database";
 
@@ -112,8 +112,12 @@ export function JobProfileReview(props: Props) {
 // ─── Estado: procesando ───────────────────────────────────────────────────────
 
 function Processing({ status, documentId }: { status: string; documentId: string }) {
-  const [isPending, startTransition] = useTransition();
-  const [ran, setRan] = useState<string | null>(null);
+  // La extracción avanza sola: el hook empuja la cola mientras esta pantalla
+  // esté abierta y pg_cron la termina si el admin se va.
+  useQueueDrain(true);
+
+  const step = Math.max(0, PROCESSING_STATES.indexOf(status)) + 1;
+  const pct = Math.round((step / (PROCESSING_STATES.length + 1)) * 100);
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-brand-light p-8 text-center space-y-4">
@@ -125,27 +129,23 @@ function Processing({ status, documentId }: { status: string; documentId: string
         </p>
       </div>
 
-      {/* En local pg_cron no alcanza a localhost, así que hace falta empujar la cola a mano */}
-      <div className="pt-2">
-        <button
-          type="button"
-          disabled={isPending}
-          onClick={() =>
-            startTransition(async () => {
-              const result = await runWorkerNowAction();
-              setRan(
-                result.summary.claimed === 0
-                  ? "No había nada pendiente en la cola."
-                  : `Procesados ${result.summary.succeeded} de ${result.summary.claimed}.`
-              );
-            })
-          }
-          className="text-xs text-gray-500 underline hover:text-brand-blue disabled:opacity-50"
+      <div className="max-w-xs mx-auto">
+        <div
+          className="h-2 w-full rounded-full bg-white overflow-hidden"
+          role="progressbar"
+          aria-valuenow={pct}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label="Progreso de la extracción del perfil"
         >
-          {isPending ? "Procesando…" : "Procesar ahora (desarrollo)"}
-        </button>
-        {ran && <p className="text-xs text-gray-500 mt-1">{ran}</p>}
+          <div
+            className="h-full rounded-full bg-brand-blue transition-all duration-500"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <p className="text-xs text-gray-500 mt-2 tabular-nums">{pct}%</p>
       </div>
+
       <input type="hidden" value={documentId} readOnly />
     </div>
   );

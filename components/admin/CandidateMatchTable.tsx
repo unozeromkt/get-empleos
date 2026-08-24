@@ -10,7 +10,6 @@ import {
   Loader2,
   Mail,
   Phone,
-  RefreshCw,
   Search,
   Upload,
 } from "lucide-react";
@@ -18,11 +17,15 @@ import {
 import {
   recalculateMatchAction,
   reprocessCandidateDocumentAction,
-  runScreeningWorkerAction,
   updateJobCandidateStatusAction,
   type ScreeningRow,
 } from "@/lib/actions/ai-screening";
+import { QueueProgress } from "@/components/admin/QueueProgress";
+import { useQueueDrain } from "@/lib/hooks/use-queue-drain";
 import { formatDate } from "@/lib/utils/date";
+
+/** Estados de los que un documento ya no sale por sí solo. */
+const TERMINAL_STATUSES = ["ready", "needs_review", "failed"];
 
 const CATEGORY_LABEL: Record<string, string> = {
   technical_skills: "Habilidades técnicas",
@@ -93,8 +96,6 @@ const PROCESSING_LABEL: Record<string, string> = {
 };
 
 export function CandidateMatchTable({ jobId, rows }: { jobId: string; rows: ScreeningRow[] }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
   const [query, setQuery] = useState("");
   const [band, setBand] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -119,15 +120,24 @@ export function CandidateMatchTable({ jobId, rows }: { jobId: string; rows: Scre
 
   const counts = useMemo(() => {
     const evaluated = rows.filter((r) => r.match);
+
+    // Solo entran en el progreso las hojas de vida que realmente pasan por la
+    // cola: un candidato sin documento no tiene nada que procesar.
+    const queued = rows.filter((r) => r.processingStatus);
+
     return {
       total: rows.length,
       high: evaluated.filter((r) => r.match?.band === "high").length,
-      processing: rows.filter(
-        (r) => r.processingStatus && !["needs_review", "ready", "failed"].includes(r.processingStatus)
-      ).length,
+      processing: queued.filter((r) => !TERMINAL_STATUSES.includes(r.processingStatus!)).length,
       criticalGaps: evaluated.filter((r) => (r.match?.criticalGaps.length ?? 0) > 0).length,
+      queuedTotal: queued.length,
+      queuedDone: queued.filter((r) => TERMINAL_STATUSES.includes(r.processingStatus!)).length,
+      queuedFailed: queued.filter((r) => r.processingStatus === "failed").length,
     };
   }, [rows]);
+
+  // Mientras quede trabajo, la pantalla empuja la cola sola (§6.1).
+  useQueueDrain(counts.processing > 0);
 
   return (
     <div className="space-y-5">
@@ -139,6 +149,14 @@ export function CandidateMatchTable({ jobId, rows }: { jobId: string; rows: Scre
         <SummaryTile label="Procesándose" value={counts.processing} tone="muted" />
       </div>
 
+      {counts.processing > 0 && (
+        <QueueProgress
+          done={counts.queuedDone}
+          total={counts.queuedTotal}
+          failed={counts.queuedFailed}
+        />
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="relative flex-1 min-w-[220px] max-w-sm">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -149,22 +167,6 @@ export function CandidateMatchTable({ jobId, rows }: { jobId: string; rows: Scre
             className="w-full pl-9 pr-3 py-2 rounded-xl border border-gray-300 text-sm text-brand-navy placeholder:text-gray-400 focus:border-brand-blue focus:outline-none"
           />
         </div>
-
-        <button
-          type="button"
-          disabled={isPending}
-          onClick={() =>
-            startTransition(async () => {
-              await runScreeningWorkerAction(jobId);
-              router.refresh();
-            })
-          }
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-brand-blue disabled:opacity-50"
-          title="En desarrollo local el cron no puede alcanzar localhost"
-        >
-          {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-          Procesar cola
-        </button>
       </div>
 
       <div className="flex flex-wrap gap-2">
