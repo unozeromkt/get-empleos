@@ -1,4 +1,6 @@
-import { textSimilarity } from "@/lib/matching/normalize/skill-normalizer";
+import { bestEvidenceMatch, buildEvidenceBlocks } from "@/lib/matching/evidence";
+import { conceptSimilarity } from "@/lib/matching/normalize/skill-normalizer";
+import { coverageCredit } from "@/lib/matching/scoring/coverage";
 import type {
   CandidateEvidence,
   CategoryOutcome,
@@ -104,7 +106,7 @@ export function scoreExperience(
   // ── 4. Sector, solo si la oferta lo exige ──
   if (requiresIndustry) {
     const haystack = candidate.experience.map((e) => `${e.company} ${e.title}`).join(" ");
-    const best = Math.max(...job.experience.industries.map((i) => textSimilarity(i, haystack)), 0);
+    const best = Math.max(...job.experience.industries.map((i) => conceptSimilarity(i, haystack)), 0);
 
     results.push({
       type: "experience",
@@ -131,40 +133,39 @@ export function scoreExperience(
   return { score: Math.round(100 * (weighted / totalWeight)), requirements: results };
 }
 
-/** Cobertura de responsabilidades — spec §16. */
+/**
+ * Cobertura de responsabilidades — spec §16, revisada.
+ *
+ * Dos correcciones frente a la versión anterior:
+ *
+ *  1. La evidencia se evalúa por CARGO completo, no frase a frase. Una
+ *     responsabilidad como "Gestionar bases de datos y mantener actualizada la
+ *     información de los clientes" se sustenta en un CV real con dos o tres
+ *     frases distintas del mismo puesto; ninguna la cubre por sí sola.
+ *  2. La similitud pasa por la curva de cumplimiento en vez de usarse como
+ *     nota directa. Ver `scoring/coverage.ts`: un candidato que hace
+ *     exactamente el trabajo pedido rara vez supera 0,6 de solapamiento.
+ */
 export function scoreResponsibilityCoverage(
   responsibilities: string[],
   candidate: CandidateEvidence
 ): { average: number; results: RequirementResult[] } {
-  // Todo lo que el candidato hizo: responsabilidades, logros y proyectos
-  const candidateActivities = candidate.experience.flatMap((e) => [
-    ...e.responsibilities,
-    ...e.achievements,
-  ]);
+  const blocks = buildEvidenceBlocks(candidate);
 
   const results = responsibilities.map<RequirementResult>((responsibility) => {
-    let bestScore = 0;
-    let bestEvidence = "";
-
-    for (const activity of candidateActivities) {
-      const similarity = textSimilarity(responsibility, activity);
-      if (similarity > bestScore) {
-        bestScore = similarity;
-        bestEvidence = activity;
-      }
-    }
-
-    const noData = candidateActivities.length === 0;
+    const best = bestEvidenceMatch([responsibility], blocks, "pooled");
+    const credit = best ? coverageCredit(best.similarity) : 0;
+    const noData = blocks.length === 0;
 
     return {
       type: "responsibility",
       requirementText: responsibility,
       importance: "required",
-      status: statusFromScore(bestScore, noData),
-      matchType: matchTypeFromScore(bestScore, noData),
-      matchScore: round2(bestScore),
-      candidateEvidence: bestScore > 0 ? bestEvidence : "",
-      candidateValue: null,
+      status: statusFromCredit(credit, noData),
+      matchType: matchTypeFromCredit(credit, noData),
+      matchScore: round2(credit),
+      candidateEvidence: credit > 0 ? (best?.text ?? "") : "",
+      candidateValue: credit > 0 ? (best?.context ?? null) : null,
       confidence: candidate.extractionConfidence,
     };
   });
@@ -183,7 +184,7 @@ function bestRoleMatch(
 
   for (const job of candidate.experience) {
     for (const target of targets) {
-      const similarity = textSimilarity(target, job.title);
+      const similarity = conceptSimilarity(target, job.title);
       if (similarity > best.score) {
         best = {
           score: similarity,
@@ -200,6 +201,25 @@ function bestRoleMatch(
 /** Umbrales de clasificación. SIN CALIBRAR — ver §14 y Fase 6. */
 const MATCHED_THRESHOLD = 0.8;
 const PARTIAL_THRESHOLD = 0.3;
+
+/**
+ * Los estados de una responsabilidad se leen sobre el crédito ya convertido,
+ * no sobre la similitud cruda: si no, el reclutador ve "No cumple" junto a un
+ * puntaje de 0,8 en el mismo renglón.
+ */
+function statusFromCredit(credit: number, noData: boolean): RequirementResult["status"] {
+  if (noData) return "unknown";
+  if (credit >= 0.85) return "matched";
+  if (credit > 0) return "partial";
+  return "not_found";
+}
+
+function matchTypeFromCredit(credit: number, noData: boolean): RequirementResult["matchType"] {
+  if (noData) return "unknown";
+  if (credit >= 0.85) return "semantic";
+  if (credit > 0) return "partial";
+  return "not_found";
+}
 
 function statusFromScore(score: number, noData: boolean): RequirementResult["status"] {
   if (noData) return "unknown";

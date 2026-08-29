@@ -15,14 +15,17 @@ import { SCORING_VERSION } from "@/lib/matching/types";
 export const DEFAULT_SCORING_CONFIG: ScoringConfiguration = {
   version: SCORING_VERSION,
   weights: {
-    technical_skills: 35,
-    experience: 30,
-    education_certifications: 10,
+    technical_skills: 33,
+    experience: 29,
+    education_certifications: 9,
     transferable_skills: 10,
-    languages: 5,
+    languages: 4,
     preferred_skills: 10,
+    location: 5,
   },
   bands: { high: 80, potential: 60 },
+  weight_mode: "adaptive",
+  adaptive_blend: 0.5,
   experience_weights: {
     relevant_years_fit: 0.35,
     role_similarity: 0.25,

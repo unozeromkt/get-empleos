@@ -8,16 +8,24 @@
  * nunca participa en el cálculo.
  */
 
-export const SCORING_VERSION = "v1";
+export const SCORING_VERSION = "v2";
 
-/** Las 6 categorías ponderadas de la spec §12.1. */
+/**
+ * Las categorías ponderadas de la spec §12.1, más `location`.
+ *
+ * La ubicación se añade en v2 porque el motor no la miraba en absoluto, y para
+ * un cargo presencial en Neiva es un requisito real del puesto —no un rasgo
+ * personal—. Se puntúa la CIUDAD, nunca la dirección de residencia, que sigue
+ * excluida en `excluded-attributes.ts`.
+ */
 export type ScoreCategory =
   | "technical_skills"
   | "experience"
   | "education_certifications"
   | "transferable_skills"
   | "languages"
-  | "preferred_skills";
+  | "preferred_skills"
+  | "location";
 
 export type ScoringWeights = Record<ScoreCategory, number>;
 
@@ -28,12 +36,23 @@ export interface ExperienceWeights {
   required_domain_experience: number;
 }
 
+export type WeightMode = "fixed" | "adaptive";
+
 export interface ScoringConfiguration {
   version: string;
   weights: ScoringWeights;
   bands: { high: number; potential: number };
   experience_weights: ExperienceWeights;
   minimum_profile_confidence: number;
+
+  /**
+   * `fixed` usa los pesos tal cual. `adaptive` los reajusta según la forma real
+   * de la oferta — ver `resolveWeights()` en el motor.
+   */
+  weight_mode?: WeightMode;
+
+  /** 0..1 — cuánto manda la forma de la oferta sobre los pesos configurados. */
+  adaptive_blend?: number;
 }
 
 /** Banda visual del resultado (spec §12.3). */
@@ -64,7 +83,8 @@ export type RequirementType =
   | "education"
   | "language"
   | "certification"
-  | "responsibility";
+  | "responsibility"
+  | "location";
 
 export type Importance = "must_have" | "required" | "preferred";
 
@@ -131,6 +151,12 @@ export interface JobSkillRequirement {
   minimumYears: number | null;
 }
 
+export interface JobLocationRequirement {
+  city: string | null;
+  region: string | null;
+  workMode: "onsite" | "hybrid" | "remote" | "unspecified";
+}
+
 export interface JobRequirements {
   title: string;
   skills: JobSkillRequirement[];
@@ -144,6 +170,8 @@ export interface JobRequirements {
   certifications: Array<{ name: string; importance: Importance }>;
   languages: Array<{ language: string; minimumLevel: string | null; importance: Importance }>;
   knockouts: string[];
+  /** null si la oferta no declara ubicación. */
+  location: JobLocationRequirement | null;
 }
 
 export interface CandidateSkillEvidence {
@@ -177,6 +205,11 @@ export interface CandidateEvidence {
    * motor no viera competencias declaradas de forma explícita.
    */
   narrative: string[];
+  /**
+   * Ciudad de residencia declarada en el CV. Solo la ciudad: la dirección
+   * exacta está prohibida como entrada del motor (§29).
+   */
+  city: string | null;
   /** Confianza global de la extracción del CV. Alimenta scoreConfidence. */
   extractionConfidence: number;
   /** true si el perfil tiene tan poco contenido que puntuarlo sería engañoso. */

@@ -52,19 +52,20 @@ importantes:
 
 ---
 
-## 3. Las 6 categorías que se evalúan
+## 3. Las 7 categorías que se evalúan
 
 Cada requisito de la oferta cae en una de estas categorías. Cada categoría tiene
 un peso dentro del puntaje total:
 
-| Categoría | Peso | Qué mide |
+| Categoría | Peso base | Qué mide |
 |---|---:|---|
-| Habilidades técnicas | 35% | Herramientas, tecnologías, conocimientos específicos marcados como obligatorios o requeridos |
-| Experiencia | 30% | Años de experiencia, similitud de cargos anteriores, cobertura de responsabilidades |
-| Educación y certificaciones | 10% | Nivel de formación, área de estudio, certificaciones |
-| Habilidades transferibles | 10% | Habilidades blandas, pero solo si hay evidencia concreta de trabajo (nunca por intuición) |
-| Idiomas | 5% | Idiomas requeridos y su nivel |
+| Habilidades técnicas | 33% | Herramientas, tecnologías, conocimientos específicos marcados como obligatorios o requeridos |
+| Experiencia | 29% | Años de experiencia, similitud de cargos anteriores, cobertura de responsabilidades |
+| Educación y certificaciones | 9% | Nivel de formación, área de estudio, certificaciones |
+| Habilidades transferibles | 10% | Competencias blandas, con evidencia concreta (declarada o demostrada en un cargo) |
+| Idiomas | 4% | Idiomas requeridos y su nivel |
 | Requisitos deseables | 10% | Las habilidades marcadas como "plus" o "deseable", no obligatorias |
+| Ubicación | 5% | Ciudad del cargo frente a ciudad del candidato, solo en cargos presenciales o híbridos |
 
 **Estos pesos son un punto de partida razonable, todavía sin calibrar con datos
 reales.** Son ajustables: se pueden cambiar globalmente, por empresa o incluso por
@@ -77,7 +78,29 @@ idioma), esa categoría **no se calcula como 0**. Simplemente se saca del cálcu
 su peso se reparte entre las categorías que sí aplican. Así, una oferta sin
 requisitos de idioma no penaliza a nadie por no tener idiomas.
 
----
+### Pesos adaptativos: el peso lo pone la oferta, no una tabla fija
+
+Los pesos base de arriba describen una vacante de perfil técnico. La mayoría de
+lo que publica Get Company no lo es.
+
+Tomemos una oferta real de call center. Trae **un** requisito técnico ("manejo
+básico de herramientas ofimáticas") y **trece** competencias comportamentales
+(comunicación asertiva, orientación al logro, tolerancia a la presión...). Con
+pesos fijos, ese único requisito ofimático decide un tercio de la nota, y las
+trece competencias juntas deciden una décima parte. El puntaje deja de medir al
+candidato y pasa a medir en qué casilla cayó cada requisito.
+
+Por eso el motor reajusta los pesos según **cuánta exigencia real deposita la
+oferta en cada categoría**, contando cada requisito por su importancia
+(indispensable pesa el triple que deseable). El resultado es una mezcla entre lo
+configurado y la forma real de la oferta, graduable con un solo parámetro:
+
+- `0` → manda la tabla de pesos, como antes.
+- `0.5` → mitad y mitad. **Es el valor actual.**
+- `1` → mandan exclusivamente los requisitos de la oferta.
+
+Para evitar que una oferta simplemente verbosa se lleve el peso, las funciones
+del cargo dejan de sumar a partir de la sexta.
 
 ## 4. Cómo se compara cada requisito individual
 
@@ -85,20 +108,55 @@ Dentro de cada categoría, cada requisito de la oferta se compara contra las
 habilidades y la experiencia del candidato, en este orden de prioridad:
 
 1. **Coincidencia exacta** — el texto es idéntico ("Excel" = "Excel")
-2. **Sinónimo conocido** — el sistema reconoce que "JS" y "JavaScript" son lo mismo
-   (hay un diccionario de equivalencias)
-3. **Coincidencia parcial** — hay palabras en común entre lo que pide la oferta y lo
-   que dice el CV, por encima de un umbral mínimo (50% de solapamiento)
-4. **Sin coincidencia** — no se encuentra nada parecido
+2. **Sinónimo conocido** — el sistema reconoce equivalencias del oficio
+   ("telemercadeo" = "call center", "atención al cliente" = "servicio al cliente")
+3. **Taxonomía** — quien declara Excel cumple un requisito de "herramientas
+   ofimáticas"; un "Agente de Servicio al Cliente" cubre un cargo de "Call Center"
+4. **Coincidencia parcial** — hay contenido en común por encima de un umbral
+5. **Sin coincidencia** — no se encuentra nada parecido
+
+### Se comparan competencias, no cadenas de texto
+
+Tres cosas que el motor hace y que un simple "¿aparece esta palabra?" no haría:
+
+- **Morfología del español.** "Clientes" cubre "cliente", "negociación" cubre
+  "negociar", "llamadas" cubre "llamada". Sin esto, una oferta redactada con
+  infinitivos ("Realizar llamadas a clientes") y un CV redactado con sustantivos
+  ("atención de llamadas al cliente") no coincidían en casi nada.
+- **Peso por informatividad.** Las ofertas colombianas comparten un andamiaje
+  verbal fijo —"realizar", "garantizar", "de manera oportuna"— que aparece igual
+  en la vacante de call center y en la de bodega, así que no distingue a nadie.
+  Esas palabras cuentan un tercio que las que sí discriminan.
+- **La evidencia se lee por cargo, no por renglón.** Una función como "Gestionar
+  bases de datos y mantener actualizada la información de los clientes" se
+  sustenta en un CV real con dos o tres frases distintas del mismo puesto.
+  Ninguna la cubre por sí sola; juntas la describen exactamente. Se agrupa por
+  cargo y no por CV completo: si no, cualquier hoja de vida larga se convertiría
+  en un comodín que cubre cualquier requisito.
+
+### Parecerse no es cumplir
+
+El motor **no usa la similitud textual como nota**. Son dos cosas distintas:
+
+> La **similitud** dice cuánto se parecen dos textos.
+> El **cumplimiento** dice si la persona hace o no hace lo que pide el requisito.
+
+Un candidato que cubre un requisito a la perfección rara vez pasa de 0,6 de
+similitud, porque describe su trabajo con sus propias palabras y añade contexto
+propio. Usar ese 0,6 como nota dejaba el techo de la categoría en torno al 60%
+**para el candidato ideal**: no medía al candidato, medía la distancia entre dos
+estilos de redacción. Por eso la similitud pasa por una curva de conversión: a
+partir de cierto punto el requisito se da por cubierto, por debajo de otro se
+considera ruido, y en medio se reparte de forma proporcional.
 
 Cada requisito queda marcado con uno de cuatro estados:
 
 | Estado | Significado |
 |---|---|
-| **Cumple** | Coincidencia exacta o por sinónimo |
+| **Cumple** | Coincidencia exacta, por sinónimo, por taxonomía o evidencia clara en un cargo |
 | **Cumple parcialmente** | Hay relación, pero no es una coincidencia completa |
-| **Sin evidencia** | El CV no aporta absolutamente ninguna habilidad — no se puede afirmar nada |
-| **No cumple** | El candidato mencionó otras habilidades, pero no esta en particular |
+| **Sin evidencia** | El CV no aporta absolutamente nada con qué comparar — no se puede afirmar nada |
+| **No cumple** | El candidato describió su trayectoria, y nada en ella corresponde a este requisito |
 
 ### La distinción más importante del sistema: "sin evidencia" ≠ "no cumple"
 
@@ -135,6 +193,9 @@ Detalles relevantes:
   responsabilidades, no el título. Alguien que fue "Supervisor de Almacén" puede
   cubrir perfectamente un cargo de "Coordinador de Logística" si las tareas que
   hizo coinciden.
+- **El cargo se compara por concepto, no por nombre.** "Agente de Servicio al
+  Cliente" y "Operario de Call Center" no comparten una sola palabra; el sistema
+  reconoce que son el mismo oficio. Antes esto puntuaba cero.
 - **No se usa la antigüedad de la experiencia como criterio.** El sistema
   deliberadamente no penaliza experiencia "vieja", porque eso generaría sesgo por
   edad.
@@ -171,7 +232,7 @@ Reglas sobre las brechas críticas:
 
 ---
 
-## 8. El puntaje final: cómo se combinan las 6 categorías
+## 8. El puntaje final: cómo se combinan las categorías
 
 ```
 Puntaje final =
@@ -239,7 +300,11 @@ en el perfil del candidato:
 - Nacionalidad, origen étnico, raza
 - Religión, afiliación política
 - Discapacidad
-- Dirección de residencia
+- Dirección de residencia (la **ciudad** sí se usa, y solo cuando la vacante es
+  presencial o híbrida: para un cargo en Neiva, vivir en Neiva es un requisito
+  del puesto, no un rasgo de la persona. Nunca descarta a nadie por sí solo:
+  genera una brecha crítica visible y decide un humano, porque la gente se
+  traslada)
 - Institución educativa (universidad/colegio específico) — solo cuenta el
   **nivel** de formación y el **área** de estudio, nunca el prestigio de la
   institución
@@ -308,8 +373,50 @@ decisión tomada en el pasado incluso meses después.
 
 ## 15. Estado de calibración
 
-Los umbrales de coincidencia (qué tan parecido debe ser un texto para contar como
-coincidencia parcial) y los pesos de cada categoría son un punto de partida basado
-en criterio, **todavía no ajustado con datos reales de contrataciones**. La
-recomendación es usar el sistema, acumular casos reales, y calibrar estos números
-más adelante comparándolos contra decisiones humanas de contratación.
+Los umbrales de coincidencia y los pesos de cada categoría son un punto de
+partida basado en criterio, **todavía no ajustado con datos reales de
+contrataciones**. La recomendación sigue siendo usar el sistema, acumular casos
+reales y calibrar estos números comparándolos contra decisiones humanas.
+
+Lo que sí existe ya es un **caso de referencia**, en `tests/calibracion/`: la
+vacante "Operario(a) Call Center" (Neiva) contra una candidata que el cliente
+considera idónea, más tres contra-casos que deben quedarse fuera. Fija las dos
+mitades del comportamiento esperado:
+
+| Perfil | Puntaje | Banda |
+|---|---:|---|
+| Candidata idónea (agente de servicio al cliente, Neiva) | 84 | Alta |
+| Asesor comercial de tienda, Neiva, 1 año | 43 | Baja |
+| Operario de producción, Neiva, sin trato con cliente | 27 | Baja |
+| Desarrollador de software, Bogotá | 21 | Baja |
+
+Que la primera suba importa tanto como que las otras tres no suban con ella: un
+motor generoso con todo el mundo no ordena a nadie. Al añadir casos nuevos,
+añadir siempre las dos clases.
+
+---
+
+## 16. Qué queda fuera del alcance de este motor
+
+El motor compara **lo que el CV dice** contra **lo que la oferta pide**. Lo que
+no puede hacer es **inferir**.
+
+Un ejemplo del caso de referencia. La oferta pide "habilidad para persuadir,
+negociar y cerrar ventas". La candidata no usa ninguna de esas tres palabras en
+su CV, pero fue consultora comercial en Claro y en Apple "con alto nivel en
+ventas". Una persona concluye de inmediato que sabe negociar. El motor, no: no
+hay ninguna cadena de texto que lo sustente, y **inventarlo sería exactamente lo
+que el sistema promete no hacer**.
+
+Ese salto —de "vendió productos durante dos años" a "sabe negociar"— solo lo da
+un modelo de lenguaje razonando sobre el CV completo. Es la diferencia principal
+con las herramientas del mercado que puntúan más alto: no tienen mejor
+aritmética, tienen un LLM emitiendo el juicio.
+
+Adoptarlo aquí es una decisión de producto pendiente, porque tiene un costo
+concreto: hoy el puntaje es determinístico y un CV con instrucciones maliciosas
+no puede alterarlo (§1). La vía que conserva esa garantía es acotada: que el
+modelo **solo pueda señalar evidencia** —"este requisito lo respalda esta frase
+literal del CV"—, que el motor **verifique que la frase existe** en el documento,
+y que la aritmética siga siendo la de este documento. El modelo aporta
+comprensión; nunca escribe un número.

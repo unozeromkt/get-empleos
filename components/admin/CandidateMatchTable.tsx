@@ -35,6 +35,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   transferable_skills: "Habilidades blandas",
   languages: "Idiomas",
   preferred_skills: "Deseables",
+  location: "Ubicación",
 };
 
 const STATUS_OPTIONS = [

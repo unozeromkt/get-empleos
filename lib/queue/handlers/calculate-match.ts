@@ -184,7 +184,7 @@ async function resolveScoringConfig(
 ): Promise<ScoringConfiguration> {
   const { data: rows } = await supabase
     .from("scoring_configurations")
-    .select("version, scope, weights, bands, experience_weights, minimum_profile_confidence, job_id, company_id")
+    .select("version, scope, weights, bands, experience_weights, minimum_profile_confidence, weight_mode, adaptive_blend, job_id, company_id")
     .eq("is_active", true);
 
   if (!rows || rows.length === 0) return DEFAULT_SCORING_CONFIG;
@@ -202,5 +202,9 @@ async function resolveScoringConfig(
     bands: chosen.bands as ScoringConfiguration["bands"],
     experience_weights: chosen.experience_weights as ScoringConfiguration["experience_weights"],
     minimum_profile_confidence: Number(chosen.minimum_profile_confidence),
+    weight_mode: (chosen.weight_mode as ScoringConfiguration["weight_mode"]) ?? "fixed",
+    adaptive_blend: chosen.adaptive_blend === null || chosen.adaptive_blend === undefined
+      ? 0.5
+      : Number(chosen.adaptive_blend),
   };
 }

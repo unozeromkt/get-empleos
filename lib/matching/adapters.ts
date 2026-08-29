@@ -51,6 +51,17 @@ export function toJobRequirements(profile: JobProfile): JobRequirements {
     })),
 
     knockouts: profile.knockout_requirements,
+
+    // Solo ciudad, departamento y modalidad. Es un requisito del puesto para
+    // un cargo presencial, no un dato personal: la dirección exacta nunca
+    // entra al motor (§29).
+    location: profile.location.city
+      ? {
+          city: profile.location.city,
+          region: profile.location.region,
+          workMode: profile.location.work_mode,
+        }
+      : null,
   };
 }
 
@@ -105,6 +116,11 @@ export function toCandidateEvidence(profile: CandidateProfile): CandidateEvidenc
 
     certifications: profile.certifications.map((c) => c.name),
     languages: profile.languages.map((l) => ({ language: l.language, level: l.level })),
+
+    // La CIUDAD es lo único que se copia del bloque de contacto, y solo para
+    // contrastarla con la ciudad de la vacante. Nombre, correo, teléfono y
+    // dirección siguen sin cruzar esta frontera (§29).
+    city: profile.contact.city,
 
     // Titular, resumen y proyectos: donde muchos CV declaran su especialidad
     // sin repetirla en la lista de habilidades

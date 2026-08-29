@@ -96,6 +96,8 @@ export interface ScoringWeights {
   transferable_skills: number;
   languages: number;
   preferred_skills: number;
+  /** Añadida en v2: ciudad del cargo frente a ciudad del candidato. */
+  location: number;
 }
 
 export interface ScoringConfiguration {

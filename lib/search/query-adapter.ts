@@ -59,6 +59,10 @@ export function queryToRequirements(query: TalentQuery): JobRequirements {
     // forma tajante, y eso solo puede nacer de una oferta revisada por una
     // persona, jamás de una frase escrita al vuelo en una caja de texto.
     knockouts: [],
+
+    // La ubicación de una búsqueda es filtro de recall, no criterio puntuable
+    // (ver el schema de TalentQuery): no entra al motor como requisito.
+    location: null,
   };
 }
 

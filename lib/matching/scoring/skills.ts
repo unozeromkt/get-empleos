@@ -1,5 +1,11 @@
 import { IMPORTANCE_WEIGHT } from "@/lib/matching/config";
-import { matchSkill, tokenOverlap } from "@/lib/matching/normalize/skill-normalizer";
+import {
+  bestEvidenceMatch,
+  buildEvidenceBlocks,
+  type EvidenceBlock,
+} from "@/lib/matching/evidence";
+import { matchSkill } from "@/lib/matching/normalize/skill-normalizer";
+import { coverageCredit } from "@/lib/matching/scoring/coverage";
 import type {
   CandidateEvidence,
   CategoryOutcome,
@@ -7,14 +13,15 @@ import type {
   RequirementResult,
 } from "@/lib/matching/types";
 
-/** Umbral para aceptar evidencia hallada en la experiencia laboral. */
-const EXPERIENCE_EVIDENCE_THRESHOLD = 0.5;
-
 /**
- * Una habilidad demostrada en un puesto concreto vale menos que una declarada
- * explícitamente: es evidencia real, pero indirecta. Se marca como parcial.
+ * Techo de una habilidad deducida de la experiencia en vez de declarada.
+ *
+ * No es un castigo a la evidencia laboral —describir la tarea en un cargo es
+ * mejor prueba que listar la palabra suelta en una tabla de habilidades—, sino
+ * el margen de error de deducirla por coincidencia de texto. Se marca como
+ * parcial para que quede a la vista del reclutador.
  */
-const EXPERIENCE_EVIDENCE_SCORE = 0.7;
+const EXPERIENCE_EVIDENCE_SCORE = 0.85;
 
 /**
  * Cobertura de habilidades — spec §14.
@@ -37,10 +44,10 @@ export function scoreSkills(
   // reclutador lee el CV entero, no solo la sección de habilidades: si alguien
   // dice "Publicidad ADS" al describir su cargo, esa es evidencia válida
   // aunque no la haya listado como skill.
-  const experienceEvidence = buildExperienceEvidence(candidate);
+  const evidenceBlocks = buildEvidenceBlocks(candidate);
 
   const results: RequirementResult[] = requirements.map((req) =>
-    evaluateSkill(req, candidate, experienceEvidence)
+    evaluateSkill(req, candidate, evidenceBlocks)
   );
 
   // Si de NINGÚN requisito se pudo obtener evidencia, la categoría no es
@@ -65,47 +72,10 @@ export function scoreSkills(
   };
 }
 
-interface ExperienceEvidenceItem {
-  text: string;
-  context: string;
-}
-
-/** Aplana cargos, responsabilidades, logros, skills por puesto y narrativa. */
-function buildExperienceEvidence(candidate: CandidateEvidence): ExperienceEvidenceItem[] {
-  const items: ExperienceEvidenceItem[] = [];
-
-  for (const job of candidate.experience) {
-    const context = `${job.title}${job.company ? ` en ${job.company}` : ""}`;
-
-    if (job.title) items.push({ text: job.title, context });
-    for (const responsibility of job.responsibilities) items.push({ text: responsibility, context });
-    for (const achievement of job.achievements) items.push({ text: achievement, context });
-    for (const skill of job.skills) items.push({ text: skill, context });
-  }
-
-  // Resumen profesional, titular, proyectos y formación. El texto largo se
-  // trocea en frases: comparar un requisito contra un párrafo entero diluye
-  // el solapamiento de tokens hasta hacerlo inservible.
-  for (const text of candidate.narrative) {
-    for (const sentence of splitSentences(text)) {
-      items.push({ text: sentence, context: "perfil profesional" });
-    }
-  }
-
-  return items;
-}
-
-function splitSentences(text: string): string[] {
-  return text
-    .split(/[.;\n]+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 3);
-}
-
 function evaluateSkill(
   req: JobSkillRequirement,
   candidate: CandidateEvidence,
-  experienceEvidence: ExperienceEvidenceItem[]
+  evidenceBlocks: EvidenceBlock[]
 ): RequirementResult {
   const match = matchSkill(req.rawName, candidate.skills, req.canonicalName);
   const matched = match.candidateIndex >= 0 ? candidate.skills[match.candidateIndex] : null;
@@ -113,7 +83,7 @@ function evaluateSkill(
   if (!matched) {
     // Segunda pasada: buscar la habilidad en la experiencia laboral antes de
     // darla por ausente
-    const fromExperience = findInExperience(req, experienceEvidence);
+    const fromExperience = findInExperience(req, evidenceBlocks);
 
     if (fromExperience) {
       return {
@@ -122,7 +92,7 @@ function evaluateSkill(
         importance: req.importance,
         status: "partial",
         matchType: "partial",
-        matchScore: EXPERIENCE_EVIDENCE_SCORE,
+        matchScore: round2(fromExperience.credit * EXPERIENCE_EVIDENCE_SCORE),
         candidateEvidence: `${fromExperience.text} (${fromExperience.context})`,
         candidateValue: fromExperience.text,
         confidence: candidate.extractionConfidence,
@@ -131,7 +101,7 @@ function evaluateSkill(
 
     // Sin nada en la lista de habilidades NI en la experiencia: solo se puede
     // afirmar que falta si el CV aportó algo con qué comparar (spec §8)
-    const noDataAtAll = candidate.skills.length === 0 && experienceEvidence.length === 0;
+    const noDataAtAll = candidate.skills.length === 0 && evidenceBlocks.length === 0;
 
     return {
       type: "skill",
@@ -175,28 +145,24 @@ function evaluateSkill(
   };
 }
 
-/** Busca el requisito en el texto libre de la experiencia laboral. */
-function findInExperience(
+/**
+ * Busca el requisito en el texto libre de la experiencia laboral.
+ *
+ * Granularidad de frase: una habilidad es un concepto atómico y debe aparecer
+ * como tal en algún renglón del CV, no armarse juntando palabras sueltas de un
+ * cargo entero.
+ */
+export function findInExperience(
   req: JobSkillRequirement,
-  evidence: ExperienceEvidenceItem[]
-): ExperienceEvidenceItem | null {
-  // Igual que en matchSkill: se prueban la forma literal y la normalizada
-  const variants = Array.from(
-    new Set([req.canonicalName, req.rawName].filter((v) => !!v?.trim()))
-  );
+  blocks: EvidenceBlock[]
+): { text: string; context: string; credit: number } | null {
+  const match = bestEvidenceMatch([req.canonicalName, req.rawName], blocks, "sentence");
+  if (!match) return null;
 
-  let best: { item: ExperienceEvidenceItem; score: number } | null = null;
+  const credit = coverageCredit(match.similarity);
+  if (credit <= 0) return null;
 
-  for (const item of evidence) {
-    for (const variant of variants) {
-      const overlap = tokenOverlap(variant, item.text);
-      if (overlap >= EXPERIENCE_EVIDENCE_THRESHOLD && (!best || overlap > best.score)) {
-        best = { item, score: overlap };
-      }
-    }
-  }
-
-  return best?.item ?? null;
+  return { text: match.text, context: match.context, credit };
 }
 
 function round2(value: number): number {

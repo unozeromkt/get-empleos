@@ -140,6 +140,7 @@ describe("integración con el motor de matching", () => {
     certifications: [],
     languages: [],
     narrative: [],
+    city: null,
     extractionConfidence: 0.8,
     isSparse: false,
   };

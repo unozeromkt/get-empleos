@@ -13,6 +13,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   transferable_skills: "Habilidades transferibles",
   languages: "Idiomas",
   preferred_skills: "Requisitos deseables",
+  location: "Ubicación",
 };
 
 /**
@@ -28,6 +29,7 @@ const CATEGORY_COLOR: Record<string, string> = {
   transferable_skills: "bg-brand-green",
   languages: "bg-gray-400",
   preferred_skills: "bg-brand-purple",
+  location: "bg-brand-cyan",
 };
 
 const STATUS_LABEL: Record<string, string> = {

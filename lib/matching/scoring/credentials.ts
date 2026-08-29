@@ -1,5 +1,7 @@
 import { IMPORTANCE_WEIGHT } from "@/lib/matching/config";
-import { normalizeText, textSimilarity } from "@/lib/matching/normalize/skill-normalizer";
+import { bestEvidenceMatch, buildEvidenceBlocks } from "@/lib/matching/evidence";
+import { conceptSimilarity, normalizeText, textSimilarity } from "@/lib/matching/normalize/skill-normalizer";
+import { coverageCredit } from "@/lib/matching/scoring/coverage";
 import type {
   CandidateEvidence,
   CategoryOutcome,
@@ -217,10 +219,22 @@ export function scoreLanguages(
 }
 
 /**
- * Habilidades transferibles — spec §17.
+ * Habilidades transferibles — spec §17, revisada.
  *
- * Solo cuentan con evidencia laboral concreta. Nunca se infieren del nombre,
- * la foto, la universidad ni el estilo de redacción del CV.
+ * La versión anterior contradecía su propia regla. La spec dice que una
+ * habilidad blanda solo cuenta con evidencia laboral concreta; el código, en
+ * cambio, solo miraba la lista declarada de habilidades blandas y NO podía
+ * leer la experiencia. El resultado era el peor de los dos mundos: premiaba al
+ * candidato que escribe "liderazgo" en una lista y no veía al que describe
+ * haber liderado un equipo.
+ *
+ * Ahora se busca en dos sitios, en orden de fuerza probatoria:
+ *   1. La habilidad declarada, resuelta por concepto (alias y taxonomía).
+ *   2. La evidencia laboral, cargo por cargo, con el descuento por tratarse de
+ *      una deducción y no de una declaración.
+ *
+ * Lo que sigue prohibido es inferirlas del nombre, la foto, la universidad o
+ * el estilo de redacción del CV.
  */
 export function scoreTransferable(
   job: JobRequirements,
@@ -236,6 +250,8 @@ export function scoreTransferable(
       .map((s) => ({ name: s.rawName, evidence: s.evidence, confidence: s.confidence })),
   ];
 
+  const blocks = buildEvidenceBlocks(candidate);
+
   const results: RequirementResult[] = [];
   let earned = 0;
   let possible = 0;
@@ -244,21 +260,44 @@ export function scoreTransferable(
     const weight = IMPORTANCE_WEIGHT[requirement.importance];
     possible += weight;
 
+    // ── 1. Declarada ──
     let bestScore = 0;
     let best: (typeof pool)[number] | null = null;
 
     for (const owned of pool) {
-      const similarity = textSimilarity(requirement.rawName, owned.name);
+      const similarity = Math.max(
+        conceptSimilarity(requirement.canonicalName || requirement.rawName, owned.name),
+        conceptSimilarity(requirement.rawName, owned.name)
+      );
       if (similarity > bestScore) {
         bestScore = similarity;
         best = owned;
       }
     }
 
+    let score = best ? coverageCredit(bestScore) * Math.max(0.5, best.confidence) : 0;
+    let evidence = best?.evidence ?? "";
+    let value = best?.name ?? null;
+
+    // ── 2. Demostrada en un cargo ──
+    const fromWork = bestEvidenceMatch(
+      [requirement.canonicalName, requirement.rawName],
+      blocks,
+      "sentence"
+    );
+
+    if (fromWork) {
+      const credit = coverageCredit(fromWork.similarity) * INFERRED_FROM_WORK_SCORE;
+      if (credit > score) {
+        score = credit;
+        evidence = `${fromWork.text} (${fromWork.context})`;
+        value = fromWork.text || fromWork.context;
+      }
+    }
+
     // Sin evidencia no se afirma nada: una habilidad blanda ausente del CV no
     // demuestra que la persona no la tenga (§17)
-    const noData = pool.length === 0;
-    const score = best ? bestScore * Math.max(0.5, best.confidence) : 0;
+    const noData = pool.length === 0 && blocks.length === 0;
 
     results.push(
       makeResult(
@@ -267,9 +306,9 @@ export function scoreTransferable(
         requirement.importance,
         noData ? "unknown" : score >= 0.6 ? "matched" : score >= 0.25 ? "partial" : "not_found",
         score,
-        best?.evidence ?? "",
-        best?.name ?? null,
-        best?.confidence ?? 0
+        evidence,
+        value,
+        best?.confidence ?? candidate.extractionConfidence
       )
     );
 
@@ -281,6 +320,13 @@ export function scoreTransferable(
     requirements: results,
   };
 }
+
+/**
+ * Techo de una competencia deducida del relato de un cargo en vez de
+ * declarada. Es evidencia legítima —de hecho la que pide §17— pero se
+ * reconoce por coincidencia de texto, con el margen de error que eso implica.
+ */
+const INFERRED_FROM_WORK_SCORE = 0.85;
 
 /**
  * Puntaje de la categoría, o `null` si no es evaluable.

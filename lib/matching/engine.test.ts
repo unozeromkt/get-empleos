@@ -22,6 +22,7 @@ function job(overrides: Partial<JobRequirements> = {}): JobRequirements {
     certifications: [],
     languages: [],
     knockouts: [],
+    location: null,
     ...overrides,
   };
 }
@@ -51,6 +52,7 @@ function candidate(overrides: Partial<CandidateEvidence> = {}): CandidateEvidenc
     certifications: [],
     languages: [],
     narrative: [],
+    city: null,
     extractionConfidence: 0.9,
     isSparse: false,
     ...overrides,
@@ -322,13 +324,18 @@ describe("combineScores — renormalización (§12.2)", () => {
       transferable_skills: null,
       languages: null,
       preferred_skills: null,
+      location: null,
     } as Record<ScoreCategory, number | null>;
 
     const { overallScore, appliedWeights } = combineScores(scores, weights);
 
-    // (80×35 + 60×30) / (35+30) = 4600/65 = 70.77 → 71
-    expect(overallScore).toBe(71);
-    expect(appliedWeights).toEqual({ technical_skills: 35, experience: 30 });
+    // (80×wt + 60×we) / (wt+we): solo pesan las dos categorías aplicables.
+    // Se calcula desde la configuración para que el test siga midiendo la
+    // renormalización y no los valores concretos de los pesos.
+    const wt = weights.technical_skills;
+    const we = weights.experience;
+    expect(overallScore).toBe(Math.round((80 * wt + 60 * we) / (wt + we)));
+    expect(appliedWeights).toEqual({ technical_skills: wt, experience: we });
   });
 
   it("una sola categoría aplicable determina el score completo", () => {
@@ -339,6 +346,7 @@ describe("combineScores — renormalización (§12.2)", () => {
       transferable_skills: null,
       languages: null,
       preferred_skills: null,
+      location: null,
     } as Record<ScoreCategory, number | null>;
 
     expect(combineScores(scores, weights).overallScore).toBe(75);
@@ -352,6 +360,7 @@ describe("combineScores — renormalización (§12.2)", () => {
       transferable_skills: null,
       languages: null,
       preferred_skills: null,
+      location: null,
     } as Record<ScoreCategory, number | null>;
 
     expect(combineScores(scores, weights).overallScore).toBe(0);
