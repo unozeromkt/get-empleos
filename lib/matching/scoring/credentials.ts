@@ -1,6 +1,6 @@
 import { IMPORTANCE_WEIGHT } from "@/lib/matching/config";
 import { bestEvidenceMatch, buildEvidenceBlocks } from "@/lib/matching/evidence";
-import { conceptSimilarity, normalizeText, textSimilarity } from "@/lib/matching/normalize/skill-normalizer";
+import { conceptMatch, normalizeText, textSimilarity } from "@/lib/matching/normalize/skill-normalizer";
 import { coverageCredit } from "@/lib/matching/scoring/coverage";
 import type {
   CandidateEvidence,
@@ -260,31 +260,52 @@ export function scoreTransferable(
     const weight = IMPORTANCE_WEIGHT[requirement.importance];
     possible += weight;
 
-    // ── 1. Declarada ──
-    let bestScore = 0;
-    let best: (typeof pool)[number] | null = null;
+    const variants = [requirement.canonicalName, requirement.rawName].filter((v) => !!v?.trim());
 
+    const best = { score: 0, evidence: "", value: null as string | null, confidence: 0 };
+    const consider = (score: number, evidence: string, value: string | null, confidence: number) => {
+      if (score <= best.score) return;
+      best.score = score;
+      best.evidence = evidence;
+      best.value = value;
+      best.confidence = confidence;
+    };
+
+    // ── 1. Declarada como competencia ──
     for (const owned of pool) {
-      const similarity = Math.max(
-        conceptSimilarity(requirement.canonicalName || requirement.rawName, owned.name),
-        conceptSimilarity(requirement.rawName, owned.name)
-      );
-      if (similarity > bestScore) {
-        bestScore = similarity;
-        best = owned;
-      }
+      const match = bestConceptMatch(variants, owned.name);
+      // La curva de cumplimiento es para el parecido de palabras; una
+      // equivalencia curada ya viene con su juicio puesto.
+      const value = match.via === "lexical" ? coverageCredit(match.score) : match.score;
+      consider(value * Math.max(0.5, owned.confidence), owned.evidence, owned.name, owned.confidence);
     }
 
-    let score = best ? coverageCredit(bestScore) * Math.max(0.5, best.confidence) : 0;
-    let evidence = best?.evidence ?? "";
-    let value = best?.name ?? null;
+    // ── 2. Puente curado desde una habilidad de oficio ──
+    //
+    // Una competencia puede estar implícita en un oficio: quien declara
+    // "ventas" ejerce persuasión y negociación, aunque no use esas palabras.
+    // Solo se acepta por alias o taxonomía —nunca por parecido de palabras—:
+    // la equivalencia tiene que estar escrita y ser revisable, no adivinada.
+    for (const skill of candidate.skills) {
+      if (skill.category === "transferable") continue; // ya está en el pool
 
-    // ── 2. Demostrada en un cargo ──
-    const fromWork = bestEvidenceMatch(
-      [requirement.canonicalName, requirement.rawName],
-      blocks,
-      "sentence"
-    );
+      const match = bestConceptMatch(variants, skill.canonicalName || skill.rawName);
+      if (match.via === "lexical" || match.score <= 0) continue;
+
+      consider(
+        match.score * Math.max(0.5, skill.confidence),
+        skill.evidence,
+        skill.rawName,
+        skill.confidence
+      );
+    }
+
+    let score = best.score;
+    let evidence = best.evidence;
+    let value = best.value;
+
+    // ── 3. Demostrada en un cargo ──
+    const fromWork = bestEvidenceMatch(variants, blocks, "sentence");
 
     if (fromWork) {
       const credit = coverageCredit(fromWork.similarity) * INFERRED_FROM_WORK_SCORE;
@@ -308,7 +329,7 @@ export function scoreTransferable(
         score,
         evidence,
         value,
-        best?.confidence ?? candidate.extractionConfidence
+        best.confidence || candidate.extractionConfidence
       )
     );
 
@@ -370,4 +391,14 @@ function makeResult(
     candidateValue,
     confidence,
   };
+}
+
+/** Mejor equivalencia entre cualquiera de las formas del requisito y un término. */
+function bestConceptMatch(variants: string[], term: string) {
+  let best = conceptMatch(variants[0] ?? "", term);
+  for (const variant of variants.slice(1)) {
+    const candidate = conceptMatch(variant, term);
+    if (candidate.score > best.score) best = candidate;
+  }
+  return best;
 }

@@ -387,14 +387,43 @@ export function coverageAcrossTexts(requirement: string, texts: string[]): numbe
  * ha trabajado nunca en un cargo parecido — cuando es exactamente su cargo.
  */
 export function conceptSimilarity(a: string, b: string): number {
-  if (!a?.trim() || !b?.trim()) return 0;
+  return conceptMatch(a, b).score;
+}
+
+/**
+ * Cómo se resolvió la equivalencia entre dos conceptos.
+ *
+ * Importa quién lo dice, no solo cuánto puntúa. Un `canonical` o un `taxonomy`
+ * son afirmaciones CURADAS: alguien escribió a mano que "telemercadeo" es call
+ * center, o que quien vende ejerce persuasión. Un `lexical` es una conjetura
+ * por parecido de palabras.
+ *
+ * La diferencia tiene consecuencias en el cálculo: a un valor lexical hay que
+ * aplicarle la curva de cumplimiento (ver `scoring/coverage.ts`), porque un
+ * solapamiento de 0,6 significa "seguramente lo cumple". A un valor curado NO:
+ * el 0,6 de la taxonomía ya es el juicio final —"declarar ventas no demuestra
+ * negociación en particular"— y pasarlo por la curva lo convertiría en un 1,0,
+ * afirmando justo lo que la taxonomía dice que no se puede afirmar.
+ */
+export interface ConceptMatch {
+  score: number;
+  via: "canonical" | "taxonomy" | "lexical";
+}
+
+export function conceptMatch(a: string, b: string): ConceptMatch {
+  if (!a?.trim() || !b?.trim()) return { score: 0, via: "lexical" };
 
   const canonicalA = toCanonical(a);
   const canonicalB = toCanonical(b);
 
-  if (canonicalA === canonicalB) return 1;
+  if (canonicalA === canonicalB) return { score: 1, via: "canonical" };
 
-  return Math.max(taxonomyScore(canonicalA, canonicalB), textSimilarity(a, b));
+  const byTaxonomy = taxonomyScore(canonicalA, canonicalB);
+  const byText = textSimilarity(a, b);
+
+  return byTaxonomy >= byText
+    ? { score: byTaxonomy, via: "taxonomy" }
+    : { score: byText, via: "lexical" };
 }
 
 /** Expuesto para los tests de morfología. */

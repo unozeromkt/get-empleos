@@ -269,9 +269,14 @@ function buildExplanation(
         : r.requirementText
     );
 
+  // "Sin evidencia" es el nombre del OTRO estado (unknown), el que va a las
+  // preguntas para el reclutador. Usar la misma etiqueta aquí borraba la
+  // distinción que sostiene todo el motor (§8) justo donde más se nota: el
+  // reclutador leía "sin evidencia" sobre un CV que sí traía información, y
+  // concluía —con razón— que el sistema no había leído el documento.
   const gaps = notFound
     .slice(0, 6)
-    .map((r) => `Sin evidencia de: ${r.requirementText}`);
+    .map((r) => `No se encontró en su trayectoria: ${r.requirementText}`);
 
   // Los `unknown` se presentan como preguntas, no como carencias (§8)
   const questionsForRecruiter = unknown
