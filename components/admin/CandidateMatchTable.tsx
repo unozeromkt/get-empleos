@@ -11,10 +11,12 @@ import {
   Mail,
   Phone,
   Search,
+  Trash2,
   Upload,
 } from "lucide-react";
 
 import {
+  deleteJobCandidateAction,
   recalculateMatchAction,
   reprocessCandidateDocumentAction,
   updateJobCandidateStatusAction,
@@ -254,6 +256,8 @@ function CandidateCard({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const band = row.match?.band ?? "insufficient_data";
   const hasCriticalGap = (row.match?.criticalGaps.length ?? 0) > 0;
@@ -395,6 +399,23 @@ function CandidateCard({
 
             <button
               type="button"
+              disabled={isPending}
+              onClick={() => {
+                setDeleteError(null);
+                setConfirmingDelete(true);
+              }}
+              className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+              title={
+                row.source === "admin_upload"
+                  ? "Eliminar esta hoja de vida"
+                  : "Eliminar esta postulación"
+              }
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+
+            <button
+              type="button"
               onClick={onToggle}
               className="p-2 rounded-lg text-gray-500 hover:text-brand-blue hover:bg-brand-blue/10 transition-colors"
               aria-label={isExpanded ? "Ocultar detalle" : "Ver detalle"}
@@ -405,6 +426,63 @@ function CandidateCard({
             </button>
           </div>
         </div>
+
+        {/* Confirmación de borrado: lo que se pierde depende del origen, así que
+            se dice explícitamente antes de borrar */}
+        {confirmingDelete && (
+          <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5">
+            <p className="text-xs text-red-800 leading-snug">
+              {row.source === "admin_upload" ? (
+                <>
+                  Se eliminará la hoja de vida de{" "}
+                  <span className="font-semibold">{row.displayName}</span> de esta oferta, de la
+                  base de hojas de vida y del buscador de talento. No se puede deshacer.
+                </>
+              ) : (
+                <>
+                  Se eliminará la postulación de{" "}
+                  <span className="font-semibold">{row.displayName}</span> junto con su evaluación
+                  y sus notas internas. Su cuenta y su hoja de vida no se borran, y podrá volver a
+                  postularse con el CV actualizado.
+                </>
+              )}
+            </p>
+
+            {deleteError && <p className="mt-1.5 text-xs text-red-700 font-medium">{deleteError}</p>}
+
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() =>
+                  startTransition(async () => {
+                    const result = await deleteJobCandidateAction(row.id, jobId);
+                    if (result?.error) {
+                      setDeleteError(result.error);
+                      return;
+                    }
+                    setConfirmingDelete(false);
+                    router.refresh();
+                  })
+                }
+                className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-semibold hover:bg-red-700 disabled:opacity-50"
+              >
+                {isPending ? "Eliminando…" : "Sí, eliminar"}
+              </button>
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => {
+                  setConfirmingDelete(false);
+                  setDeleteError(null);
+                }}
+                className="px-3 py-1.5 rounded-lg border border-red-200 bg-white text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Brecha crítica: visible sin necesidad de expandir */}
         {hasCriticalGap && (

@@ -394,6 +394,115 @@ export async function updateJobCandidateStatusAction(
 }
 
 /**
+ * Quita a una persona de una oferta.
+ *
+ * Hace falta para deshacer una carga duplicada y, sobre todo, para poder
+ * reemplazar una hoja de vida: el pipeline evalúa el documento con el que
+ * entró, así que actualizar el CV pasa por sacar al candidato y volver a
+ * subirlo. Sin esto, un CV subido dos veces se quedaba para siempre.
+ *
+ * El borrado no es el mismo según de dónde vino la persona:
+ *
+ * - `admin_upload`: la hoja de vida existía solo para esta oferta, así que se
+ *   borra entera — documento, perfil extraído (que arrastra el índice de
+ *   búsqueda) y archivo del bucket. Solo así desaparece también de la base de
+ *   hojas de vida y del buscador de talento.
+ * - `application`: se borra la postulación y el ON DELETE CASCADE se lleva el
+ *   job_candidate. El CV es del candidato y NO se toca; lo que se libera es el
+ *   UNIQUE(job_id, candidate_id) para que pueda volver a postularse con su
+ *   hoja de vida al día.
+ */
+export async function deleteJobCandidateAction(jobCandidateId: string, jobId: string) {
+  const { supabase } = await requireAdmin();
+
+  const { data: jc } = await supabase
+    .from("job_candidates")
+    .select("id, job_id, source, application_id, document_id")
+    .eq("id", jobCandidateId)
+    .maybeSingle();
+
+  if (!jc) return { error: "Candidato no encontrado." };
+  // El id de la oferta viene del cliente: sin esto se podría borrar a alguien
+  // de otra vacante pasando otro jobCandidateId.
+  if (jc.job_id !== jobId) return { error: "Ese candidato no pertenece a esta oferta." };
+
+  const admin = createAdminClient();
+  const documentId = jc.document_id as string | null;
+  const isAdminUpload = jc.source === "admin_upload";
+
+  // Un trabajo encolado sobre algo que va a dejar de existir solo produce
+  // reintentos fallidos y ruido en la cola.
+  await admin
+    .from("ai_processing_runs")
+    .update({ status: "cancelled", finished_at: new Date().toISOString() })
+    .eq("entity_type", "job_candidate")
+    .eq("entity_id", jobCandidateId)
+    .in("status", ["queued"]);
+
+  if (jc.application_id) {
+    const { error } = await supabase.from("applications").delete().eq("id", jc.application_id);
+    if (error) return { error: "No se pudo eliminar la postulación." };
+  } else {
+    const { error } = await supabase.from("job_candidates").delete().eq("id", jobCandidateId);
+    if (error) return { error: "No se pudo eliminar el candidato." };
+  }
+
+  if (isAdminUpload && documentId) {
+    await admin
+      .from("ai_processing_runs")
+      .update({ status: "cancelled", finished_at: new Date().toISOString() })
+      .eq("entity_type", "candidate_document")
+      .eq("entity_id", documentId)
+      .in("status", ["queued"]);
+
+    // Defensa por si el mismo documento llegara a estar asociado a otra oferta:
+    // el archivo se conserva mientras alguien lo siga usando.
+    const { count: stillUsed } = await supabase
+      .from("job_candidates")
+      .select("id", { count: "exact", head: true })
+      .eq("document_id", documentId);
+
+    // Estrictamente 0: si el conteo falla llega null, y ahí es preferible
+    // dejar el documento huérfano antes que borrar uno que sigue en uso.
+    if (stillUsed === 0) {
+      const { data: doc } = await supabase
+        .from("candidate_documents")
+        .select("id, storage_path, candidate_id")
+        .eq("id", documentId)
+        .maybeSingle();
+
+      // Guarda extra: nunca tocar el CV de alguien que sí tiene cuenta
+      if (doc && !doc.candidate_id) {
+        // Las versiones de perfil van primero y a mano: la FK las dejaría
+        // huérfanas con source_document_id NULL y el candidato seguiría
+        // apareciendo en /admin/talento apuntando a un CV inexistente.
+        await supabase
+          .from("candidate_profile_versions")
+          .delete()
+          .eq("source_document_id", documentId)
+          .is("candidate_id", null);
+
+        const { error: docError } = await supabase
+          .from("candidate_documents")
+          .delete()
+          .eq("id", documentId);
+
+        if (docError) return { error: "Se quitó de la oferta, pero no se pudo borrar la hoja de vida." };
+
+        await supabase.storage.from("cvs").remove([doc.storage_path as string]);
+      }
+    }
+  }
+
+  revalidatePath(`/admin/jobs/${jobId}/candidatos`);
+  revalidatePath(`/admin/jobs/${jobId}/cvs`);
+  revalidatePath(`/admin/jobs/${jobId}/applications`);
+  revalidatePath("/admin/jobs");
+  revalidatePath("/admin/candidates");
+  return { success: true };
+}
+
+/**
  * Procesa la cola a mano. En local pg_cron no alcanza a localhost.
  *
  * Vacía la cola en lugar de procesar un solo lote. El pipeline de un CV son

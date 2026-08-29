@@ -25,6 +25,11 @@ interface Props {
   searchParams: { status?: string; company?: string; company_name?: string };
 }
 
+/** Oferta con el agregado embebido de candidatos. */
+type JobRow = JobWithCompany & {
+  candidate_count?: { count: number }[] | { count: number } | null;
+};
+
 export default async function AdminJobsPage({ searchParams }: Props) {
   const supabase = await createClient();
   const {
@@ -47,10 +52,15 @@ export default async function AdminJobsPage({ searchParams }: Props) {
   // Si hay búsqueda por nombre pero no hay matches, devolver vacío sin ejecutar más queries
   const noResults = companyIds !== null && companyIds.length === 0;
 
-  // Construir query con filtros
+  // Construir query con filtros.
+  //
+  // El conteo sale de `job_candidates` y no de `applications`: esa tabla solo
+  // tiene a quien se postuló por el portal, así que las hojas de vida que el
+  // admin carga sobre la oferta no aparecían y la columna mostraba 0.
+  // `job_candidates` es el espejo de ambos orígenes (migración 015).
   let query = supabase
     .from("jobs")
-    .select("*, area:job_areas(*), company:companies(id, name)")
+    .select("*, area:job_areas(*), company:companies(id, name), candidate_count:job_candidates(count)")
     .order("created_at", { ascending: false });
 
   if (searchParams.status) {
@@ -66,22 +76,23 @@ export default async function AdminJobsPage({ searchParams }: Props) {
     query = query.in("company_id", companyIds);
   }
 
-  const [{ data: jobsData }, { count: pendingReviewCount }, { data: appCounts }] =
-    await Promise.all([
-      noResults ? Promise.resolve({ data: [] }) : query,
-      supabase
-        .from("jobs")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "pending_review"),
-      supabase.from("applications").select("job_id"),
-    ]);
+  const [{ data: jobsData }, { count: pendingReviewCount }] = await Promise.all([
+    noResults ? Promise.resolve({ data: [] }) : query,
+    supabase
+      .from("jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending_review"),
+  ]);
 
-  const jobs = (jobsData ?? []) as JobWithCompany[];
+  const jobs = (jobsData ?? []) as JobRow[];
 
-  const appsPerJob = (appCounts ?? []).reduce(
-    (acc, { job_id }) => { acc[job_id] = (acc[job_id] ?? 0) + 1; return acc; },
-    {} as Record<string, number>
-  );
+  // PostgREST devuelve el agregado embebido como array de un elemento; según
+  // la versión puede llegar como objeto suelto.
+  const candidatesOf = (job: JobRow) => {
+    const raw = job.candidate_count;
+    const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    return list[0]?.count ?? 0;
+  };
 
   const activeFilter = searchParams.status ?? "";
 
@@ -176,8 +187,11 @@ export default async function AdminJobsPage({ searchParams }: Props) {
                 <th className="text-center px-4 py-3.5 text-xs font-semibold uppercase tracking-wide text-gray-400">
                   Estado
                 </th>
-                <th className="text-center px-4 py-3.5 text-xs font-semibold uppercase tracking-wide text-gray-400 hidden md:table-cell">
-                  Postulantes
+                <th
+                  className="text-center px-4 py-3.5 text-xs font-semibold uppercase tracking-wide text-gray-400 hidden md:table-cell"
+                  title="Postulados por el portal + hojas de vida cargadas por un admin"
+                >
+                  Candidatos
                 </th>
                 <th className="text-left px-4 py-3.5 text-xs font-semibold uppercase tracking-wide text-gray-400 hidden lg:table-cell">
                   Publicado
@@ -242,7 +256,7 @@ export default async function AdminJobsPage({ searchParams }: Props) {
                         title="Ver candidatos de esta oferta"
                       >
                         <Users className="w-3.5 h-3.5 text-gray-400" />
-                        {appsPerJob[job.id] ?? 0}
+                        {candidatesOf(job)}
                       </Link>
                     </td>
 
@@ -278,7 +292,7 @@ export default async function AdminJobsPage({ searchParams }: Props) {
                             jobId={job.id}
                             status={job.status}
                             title={job.title}
-                            applications={appsPerJob[job.id] ?? 0}
+                            applications={candidatesOf(job)}
                           />
                         </div>
                       )}
