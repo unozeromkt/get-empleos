@@ -71,16 +71,21 @@ export function JobProfileReview(props: Props) {
     if (!PROCESSING_STATES.includes(status)) return;
 
     const interval = setInterval(async () => {
-      const result = await getJobDocumentStatusAction(props.documentId);
-      if ("error" in result) return;
+      try {
+        const result = await getJobDocumentStatusAction(props.documentId);
+        if ("error" in result) return;
 
-      setStatus(result.status);
-      setErrorCode(result.errorCode);
-      setErrorMessage(result.errorMessage);
+        setStatus(result.status);
+        setErrorCode(result.errorCode);
+        setErrorMessage(result.errorMessage);
 
-      if (!PROCESSING_STATES.includes(result.status)) {
-        clearInterval(interval);
-        router.refresh();
+        if (!PROCESSING_STATES.includes(result.status)) {
+          clearInterval(interval);
+          router.refresh();
+        }
+      } catch {
+        // Una interrupción temporal de red no debe desmontar toda la página.
+        // El siguiente ciclo de polling vuelve a intentarlo automáticamente.
       }
     }, 3000);
 
@@ -247,20 +252,32 @@ function ReviewForm({
     formData.set("profile_version_id", profileVersionId);
 
     startTransition(async () => {
-      const result = await confirmJobProfileAction(formData);
-      if (result?.error) setError(result.error);
+      try {
+        const result = await confirmJobProfileAction(formData);
+        if (result?.error) setError(result.error);
+      } catch {
+        setError(
+          "La conexión se interrumpió antes de confirmar la publicación. La oferta no se publicó; inténtalo de nuevo."
+        );
+      }
     });
   }
 
   function requestImprovement() {
     setImprovementError(null);
     startImprovement(async () => {
-      const result = await improveJobProfileAction(profileVersionId, JSON.stringify(profile));
-      if ("error" in result) {
-        setImprovementError(result.error ?? "No se pudo preparar la propuesta.");
-        return;
+      try {
+        const result = await improveJobProfileAction(profileVersionId, JSON.stringify(profile));
+        if ("error" in result) {
+          setImprovementError(result.error ?? "No se pudo preparar la propuesta.");
+          return;
+        }
+        setImprovement(result.improvement);
+      } catch {
+        setImprovementError(
+          "La conexión se interrumpió mientras se preparaba la mejora. La oferta no cambió; puedes intentarlo de nuevo."
+        );
       }
-      setImprovement(result.improvement);
     });
   }
 
