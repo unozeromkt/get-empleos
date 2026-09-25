@@ -108,8 +108,10 @@ sí solas una medición validada de ética, altruismo, liderazgo o resiliencia.
 Get Empleos separa dos procesos:
 
 1. **La IA extrae información estructurada** de la oferta y del CV.
-2. **Un motor determinístico calcula el match**, usando reglas versionadas y
-   evidencias visibles.
+2. **Una segunda opinión semántica opcional** revisa únicamente equivalencias
+   ambiguas y debe citar una frase literal del CV.
+3. **Un motor determinístico calcula el match**, usando reglas versionadas,
+   créditos fijos y evidencias visibles.
 
 La IA no decide libremente el porcentaje final. El resultado se construye a
 partir de categorías explícitas:
@@ -130,18 +132,33 @@ convierte automáticamente en un cero.
 
 ## 4. Comparación directa
 
-| Aspecto | Talent Scout | Get Empleos v4 |
+| Aspecto | Talent Scout | Get Empleos v5 |
 |---|---|---|
 | Cálculo de requisitos | Aparentemente binario y con pesos iguales | Ponderado por importancia y evidencia |
 | Datos faltantes | Pueden terminar reduciendo la puntuación | Se distinguen como `desconocidos` |
 | Personalidad desde el CV | Se infieren seis dimensiones | No se infiere personalidad desde el estilo del CV |
 | Habilidades blandas | Frases genéricas pueden recibir crédito | Requieren una acción o resultado laboral concreto |
 | Explicación | Texto generado por dimensión | Evidencia del CV vinculada a cada requisito |
-| Reproducibilidad | El resultado observado cambió en el tiempo | Motor determinístico y versionado |
+| Reproducibilidad | El resultado observado cambió en el tiempo | Cálculo versionado; inferencias guardadas con evidencia, modelo y prompt |
 | Requisitos críticos | Parecen valer lo mismo que otros requisitos | `must_have`, requerido y deseable tienen pesos distintos |
 | Datos protegidos | Se encontró género en un perfil ideal | Se excluyen del perfil y se registran como advertencia |
 | Integración | Herramienta separada | Parte del portal, postulaciones y perfiles de usuario |
 | Revisión humana | Permite ajustar criterios | Conserva versión, confirmación y diferencias frente a la IA |
+
+### Dos mejoras incorporadas en v5
+
+**Asistente de calidad de la oferta.** Al revisar el Word o PDF, el sistema
+muestra pocas alertas concretas y permite solicitar una propuesta mejorada. Es
+opcional: no agrega pasos obligatorios ni impide publicar. La persona puede
+aplicar la propuesta o conservar la versión original. Los años, la modalidad,
+la formación y los demás hechos no se pueden inventar ni endurecer.
+
+**Adjudicación semántica con evidencia.** Si una vacante especializada usa una
+sigla o concepto que el glosario no conoce —por ejemplo, “EVA” frente a
+“actividad extravehicular”—, la IA puede reconocer la equivalencia. Para que
+afecte el resultado debe citar texto real del CV, superar una confianza mínima
+y pasar la validación del sistema. La IA no devuelve el porcentaje ni toma la
+decisión de contratación.
 
 ---
 
@@ -346,7 +363,7 @@ La interfaz puede conservar un indicador general, pero siempre acompañado por:
 Se recomienda avanzar con Get Empleos como sistema principal de perfilamiento,
 con el siguiente orden:
 
-1. Activar la versión v4 del motor.
+1. Activar la versión v5 del motor y sus migraciones de auditoría.
 2. Reprocesar los perfiles de cargo y CV creados con extractores anteriores.
 3. Revisar con Get Company los requisitos obligatorios y deseables antes de
    publicar cada vacante.
@@ -399,7 +416,12 @@ decisión humana, incluso cuando su porcentaje sea menor que el de Talent Scout.
 - [SIOP — principios para la validación y uso de procedimientos de selección](https://www.siop.org/wp-content/uploads/2025/12/UniformSelectionStatement_121525.pdf)
 - [SIOP — inteligencia artificial en evaluación y selección de talento](https://siop.org/wp-content/uploads/2024/12/Artificial-Intelligence-in-Talent-Assessment-and-Selection.pdf)
 - [Circular Externa 002 de 2024 de la Superintendencia de Industria y Comercio](https://sedeelectronica.sic.gov.co/sites/default/files/normativa/Circular%20Externa%20No.%20002%20del%2021%20de%20agosto%20de%202024.pdf)
+- [Ley 1581 de 2012 — protección de datos personales en Colombia](https://www.funcionpublica.gov.co/eva/gestornormativo/norma.php?i=49981)
 - [Ley 2466 de 2025 — disposiciones sobre discriminación laboral en Colombia](https://www.funcionpublica.gov.co/eva/gestornormativo/norma.php?i=260676)
+- [NIST AI Risk Management Framework — gestión de riesgos y confiabilidad de IA](https://www.nist.gov/itl/ai-risk-management-framework)
+
+Estas fuentes son referencias de diseño y evaluación. No representan una
+certificación ISO ni un aval de las entidades mencionadas.
 
 ---
 

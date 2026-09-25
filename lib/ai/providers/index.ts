@@ -1,5 +1,10 @@
 import { aiConfig } from "@/lib/ai/config";
-import type { AIProfileExtractionProvider, AITalentQueryProvider } from "@/lib/ai/provider";
+import type {
+  AIJobImprovementProvider,
+  AIProfileExtractionProvider,
+  AISemanticMatchProvider,
+  AITalentQueryProvider,
+} from "@/lib/ai/provider";
 import { openAIProvider } from "@/lib/ai/providers/openai";
 
 /**
@@ -9,7 +14,12 @@ import { openAIProvider } from "@/lib/ai/providers/openai";
  * archivo nuevo de esta carpeta, regístralo aquí, y apunta la variable
  * `AI_PROVIDER` a su clave. Nada más cambia en la aplicación.
  */
-const PROVIDERS: Record<string, AIProfileExtractionProvider & AITalentQueryProvider> = {
+type CompleteAIProvider = AIProfileExtractionProvider &
+  AITalentQueryProvider &
+  AIJobImprovementProvider &
+  AISemanticMatchProvider;
+
+const PROVIDERS: Record<string, CompleteAIProvider> = {
   openai: openAIProvider,
 };
 
@@ -35,5 +45,17 @@ export function getTalentQueryProvider(): AITalentQueryProvider {
       `Proveedor de IA desconocido: "${aiConfig.provider}". Disponibles: ${Object.keys(PROVIDERS).join(", ")}`
     );
   }
+  return provider;
+}
+
+export function getJobImprovementProvider(): AIJobImprovementProvider {
+  const provider = PROVIDERS[aiConfig.provider];
+  if (!provider) throw new Error(`Proveedor de IA desconocido: "${aiConfig.provider}".`);
+  return provider;
+}
+
+export function getSemanticMatchProvider(): AISemanticMatchProvider {
+  const provider = PROVIDERS[aiConfig.provider];
+  if (!provider) throw new Error(`Proveedor de IA desconocido: "${aiConfig.provider}".`);
   return provider;
 }

@@ -1,21 +1,29 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { aiConfig } from "@/lib/ai/config";
+import { MATCH_ADJUDICATION_PROMPT_VERSION } from "@/lib/ai/prompts/match-adjudication";
+import { getSemanticMatchProvider } from "@/lib/ai/providers";
 import { parseCandidateProfile } from "@/lib/ai/schemas/candidate-profile";
 import { jobProfileSchema } from "@/lib/ai/schemas/job-profile";
 import { sha256 } from "@/lib/documents/hash";
 import { toCandidateEvidence, toJobRequirements } from "@/lib/matching/adapters";
 import { DEFAULT_SCORING_CONFIG } from "@/lib/matching/config";
 import { calculateMatch } from "@/lib/matching/engine";
-import type { ScoringConfiguration } from "@/lib/matching/types";
+import {
+  buildSemanticAdjudicationRequest,
+  validateSemanticAdjudications,
+} from "@/lib/matching/semantic-adjudication";
+import { SCORING_VERSION, type SemanticAdjudication, type ScoringConfiguration } from "@/lib/matching/types";
 import type { AIRun } from "@/lib/queue/enqueue";
 import type { HandlerResult } from "@/lib/queue/dispatch";
 
 /**
  * Calcula el match de un candidato contra una oferta.
  *
- * NO llama a ningún LLM: solo lee los perfiles ya estructurados y ejecuta el
- * motor determinístico. Va por la cola porque puede haber muchos candidatos
- * por oferta y no queremos bloquear la respuesta del usuario.
+ * El motor determinístico calcula primero. De forma opcional, una segunda
+ * opinión semántica revisa hasta seis requisitos ambiguos y debe citar el CV
+ * literalmente. El LLM nunca asigna porcentajes: el motor valida la evidencia,
+ * aplica créditos fijos y vuelve a calcular de forma reproducible.
  */
 export async function handleCalculateMatch(
   supabase: SupabaseClient,
@@ -93,18 +101,30 @@ export async function handleCalculateMatch(
   // ── Configuración de scoring: por oferta > por empresa > global ──
   const config = await resolveScoringConfig(supabase, jc.job_id as string, job.company_id as string | null);
 
-  // ── Cálculo determinístico ──
+  // ── Primera pasada determinística ──
   const requirements = toJobRequirements(parsedJob.data);
   const evidence = toCandidateEvidence(parsedCandidate.data);
-  const result = calculateMatch(requirements, evidence, config);
+  let result = calculateMatch(requirements, evidence, config);
 
-  // Idempotencia (spec §34): si nada relevante cambió, no se recalcula
-  const inputHash = sha256(
+  const semanticEnabled =
+    aiConfig.enabled &&
+    aiConfig.features.matching &&
+    aiConfig.features.semanticAdjudication;
+
+  // La versión del prompt y del modelo forman parte de la entrada. Si cambia
+  // cualquiera, se genera un nuevo histórico aun con los mismos documentos.
+  const baseInputHash = sha256(
     JSON.stringify({
       job: jobVersion.id,
       candidate: candidateVersion.id,
       scoring: config.version,
-      engine: result.scoringVersion,
+      engine: SCORING_VERSION,
+      semantic: semanticEnabled
+        ? {
+            prompt: MATCH_ADJUDICATION_PROMPT_VERSION,
+            model: aiConfig.extractionModel,
+          }
+        : "disabled",
     })
   );
 
@@ -115,8 +135,50 @@ export async function handleCalculateMatch(
     .eq("is_current", true)
     .maybeSingle();
 
+  if (existing?.input_hash === baseInputHash) {
+    return { ok: true };
+  }
+
+  let semanticAdjudications: SemanticAdjudication[] = [];
+  let semanticStatus: "disabled" | "not_needed" | "applied" | "fallback" = semanticEnabled
+    ? "not_needed"
+    : "disabled";
+  let semanticModelName: string | null = null;
+  let semanticPromptVersion: string | null = null;
+  let inputHash = baseInputHash;
+
+  if (semanticEnabled) {
+    const request = buildSemanticAdjudicationRequest(requirements, evidence, result);
+    if (request) {
+      try {
+        const provider = getSemanticMatchProvider();
+        const adjudicated = await provider.adjudicateMatch(request);
+        semanticAdjudications = validateSemanticAdjudications(request, adjudicated.data);
+        semanticModelName = adjudicated.metadata.model;
+        semanticPromptVersion = adjudicated.metadata.promptVersion;
+        semanticStatus = semanticAdjudications.length > 0 ? "applied" : "not_needed";
+
+        if (semanticAdjudications.length > 0) {
+          result = calculateMatch(requirements, evidence, config, semanticAdjudications);
+        }
+      } catch (error) {
+        // La IA es una mejora acotada, no una dependencia del ranking. Si el
+        // proveedor falla, conservamos el resultado determinístico y dejamos
+        // un estado auditable que permite reintentar en una ejecución futura.
+        semanticStatus = "fallback";
+        semanticPromptVersion = MATCH_ADJUDICATION_PROMPT_VERSION;
+        inputHash = sha256(`${baseInputHash}:semantic-fallback`);
+        console.warn("Semantic match adjudication failed; deterministic fallback used.", {
+          error: error instanceof Error ? error.name : "unknown",
+        });
+      }
+    }
+  }
+
+  // Idempotencia (spec §34): la rama fallback usa otro hash para que una
+  // ejecución posterior pueda volver a intentar la adjudicación.
   if (existing?.input_hash === inputHash) {
-    return { ok: true }; // ya calculado con las mismas versiones
+    return { ok: true };
   }
 
   // Nunca se recalcula un histórico en silencio: se marca como no vigente y
@@ -142,6 +204,10 @@ export async function handleCalculateMatch(
       scoring_version: result.scoringVersion,
       model_name: jobVersion.model_name,
       prompt_version: jobVersion.prompt_version,
+      semantic_status: semanticStatus,
+      semantic_adjudications: semanticAdjudications,
+      semantic_model_name: semanticModelName,
+      semantic_prompt_version: semanticPromptVersion,
       input_hash: inputHash,
       is_current: true,
     })

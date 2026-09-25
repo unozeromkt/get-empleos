@@ -14,6 +14,7 @@ import type {
   MatchResult,
   RequirementResult,
   ScoreCategory,
+  SemanticAdjudication,
   ScoringConfiguration,
   ScoringWeights,
 } from "@/lib/matching/types";
@@ -26,14 +27,15 @@ import { SCORING_VERSION } from "@/lib/matching/types";
  * configuración producen siempre el mismo resultado. No toca red, base de
  * datos, reloj ni aleatoriedad.
  *
- * El LLM NO participa aquí. Solo aporta los perfiles estructurados de entrada;
- * la aritmética es toda de este módulo. Por eso un documento con instrucciones
- * maliciosas no puede alterar la puntuación de nadie (spec §26).
+ * El LLM nunca decide el porcentaje. Puede aportar adjudicaciones semánticas
+ * previamente validadas y acotadas; esta función sigue aplicando valores fijos,
+ * pesos, brechas y bandas de forma determinística y auditable.
  */
 export function calculateMatch(
   job: JobRequirements,
   candidate: CandidateEvidence,
-  config: ScoringConfiguration = DEFAULT_SCORING_CONFIG
+  config: ScoringConfiguration = DEFAULT_SCORING_CONFIG,
+  semanticAdjudications: SemanticAdjudication[] = []
 ): MatchResult {
   // Los requisitos preferidos van a su propia categoría (spec §12.1)
   const coreSkills = job.skills.filter(
@@ -44,12 +46,12 @@ export function calculateMatch(
   );
 
   const outcomes: Record<ScoreCategory, CategoryOutcome> = {
-    technical_skills: scoreSkills(coreSkills, candidate),
-    experience: scoreExperience(job, candidate, config.experience_weights),
+    technical_skills: scoreSkills(coreSkills, candidate, semanticAdjudications),
+    experience: scoreExperience(job, candidate, config.experience_weights, semanticAdjudications),
     education_certifications: scoreCredentials(job, candidate),
     transferable_skills: scoreTransferable(job, candidate),
     languages: scoreLanguages(job, candidate),
-    preferred_skills: scoreSkills(preferredSkills, candidate),
+    preferred_skills: scoreSkills(preferredSkills, candidate, semanticAdjudications),
     location: scoreLocation(job, candidate),
   };
 

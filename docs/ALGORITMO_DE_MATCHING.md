@@ -11,20 +11,21 @@ Referencia técnica en el repositorio: `lib/matching/` (código) y
 
 ## 1. Principio general
 
-El sistema separa dos trabajos que casi nunca se separan en herramientas similares:
+El sistema separa tres trabajos que suelen mezclarse en herramientas similares:
 
 1. **Extracción** (hace la IA): lee la oferta y el CV, y los convierte en datos
    estructurados — requisitos por un lado, experiencia y habilidades por otro.
-2. **Cálculo del score** (NO lo hace la IA): un motor de reglas fijas, sin
-   inteligencia artificial de por medio, compara ambos conjuntos de datos y
-   produce el puntaje.
+2. **Adjudicación semántica opcional** (hace la IA): revisa como máximo seis
+   equivalencias que el motor no pudo resolver y debe citar una frase literal
+   del CV. No evalúa personalidad ni propone un porcentaje.
+3. **Cálculo del score** (NO lo hace la IA): un motor de reglas fijas valida la
+   cita, aplica créditos predefinidos, compara los datos y produce el puntaje.
 
-La IA nunca decide un número. Solo lee documentos. Esto tiene dos consecuencias
-importantes:
+La IA nunca decide un número. Esto tiene tres consecuencias importantes:
 
-- El mismo par oferta-candidato siempre da el mismo resultado (es determinístico).
-- Un documento con contenido malicioso o inusual no puede alterar la puntuación,
-  porque quien puntúa es una fórmula matemática, no un modelo de lenguaje.
+- La aritmética, los pesos y las bandas son determinísticos y están versionados.
+- Ninguna inferencia se acepta sin una cita que el sistema compruebe en el CV.
+- Si el proveedor de IA falla, el resultado determinístico sigue disponible.
 
 ---
 
@@ -40,9 +41,12 @@ importantes:
 4. La IA extrae su información → "Perfil del Candidato"
    (experiencia laboral, formación, habilidades, idiomas, certificaciones)
 
-5. El motor de cálculo compara ambos perfiles, categoría por categoría
+5. El motor hace una primera comparación, categoría por categoría
 
-6. Se produce el resultado:
+6. Solo para requisitos ambiguos, la IA propone equivalencias con evidencia
+   literal; el sistema descarta citas inventadas o de baja confianza
+
+7. El motor recalcula y produce el resultado:
    - Un puntaje de 0 a 100
    - Una banda de color (alta / parcial / baja / datos insuficientes)
    - Un nivel de confianza, independiente del puntaje
@@ -396,10 +400,11 @@ añadir siempre las dos clases.
 
 ---
 
-## 16. Qué queda fuera del alcance de este motor
+## 16. Qué puede inferir y cuáles son sus límites
 
-El motor compara **lo que el CV dice** contra **lo que la oferta pide**. Lo que
-no puede hacer es **inferir**.
+El motor compara **lo que el CV dice** contra **lo que la oferta pide**. La
+versión v5 incorpora una inferencia muy acotada para reconocer siglas,
+traducciones, sinónimos y experiencia equivalente que una taxonomía no conozca.
 
 Un ejemplo del caso de referencia. La oferta pide "habilidad para persuadir,
 negociar y cerrar ventas". La candidata no usa ninguna de esas tres palabras en
@@ -408,15 +413,13 @@ ventas". Una persona concluye de inmediato que sabe negociar. El motor, no: no
 hay ninguna cadena de texto que lo sustente, y **inventarlo sería exactamente lo
 que el sistema promete no hacer**.
 
-Ese salto —de "vendió productos durante dos años" a "sabe negociar"— solo lo da
-un modelo de lenguaje razonando sobre el CV completo. Es la diferencia principal
-con las herramientas del mercado que puntúan más alto: no tienen mejor
-aritmética, tienen un LLM emitiendo el juicio.
+Ese salto —de "vendió productos durante dos años" a "sabe negociar"— sigue fuera
+del score si no existe evidencia laboral suficiente. El modelo puede reconocer,
+por ejemplo, que “EVA” significa “actividad extravehicular”, pero debe devolver
+la frase exacta del CV y una explicación. El sistema comprueba la cita, exige una
+confianza mínima y aplica un crédito fijo de 0,95 si la equivalencia es clara o
+0,65 si es parcial. Si no puede demostrarlo, queda como desconocido.
 
-Adoptarlo aquí es una decisión de producto pendiente, porque tiene un costo
-concreto: hoy el puntaje es determinístico y un CV con instrucciones maliciosas
-no puede alterarlo (§1). La vía que conserva esa garantía es acotada: que el
-modelo **solo pueda señalar evidencia** —"este requisito lo respalda esta frase
-literal del CV"—, que el motor **verifique que la frase existe** en el documento,
-y que la aritmética siga siendo la de este documento. El modelo aporta
-comprensión; nunca escribe un número.
+El modelo aporta comprensión; nunca escribe el número final, no decide contratar
+y no evalúa rasgos protegidos o de personalidad. Cada adjudicación conserva
+modelo, versión del prompt, evidencia y estado de fallback para auditoría.

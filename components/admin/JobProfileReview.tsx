@@ -9,6 +9,7 @@ import {
   Loader2,
   Plus,
   RefreshCw,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
@@ -17,8 +18,10 @@ import { Button } from "@/components/ui/button";
 import {
   confirmJobProfileAction,
   getJobDocumentStatusAction,
+  improveJobProfileAction,
   retryJobDocumentAction,
 } from "@/lib/actions/ai-jobs";
+import { analyzeJobProfileQuality } from "@/lib/ai/job-quality";
 import { useQueueDrain } from "@/lib/hooks/use-queue-drain";
 import { missingFieldsForPublish, type JobProfile } from "@/lib/ai/schemas/job-profile";
 import type { Company, JobArea } from "@/lib/types/database";
@@ -212,11 +215,28 @@ function ReviewForm({
 }: Props & { profile: JobProfile; profileVersionId: string }) {
   const [profile, setProfile] = useState<JobProfile>(initialProfile);
   const [isPending, startTransition] = useTransition();
+  const [isImproving, startImprovement] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [improvementError, setImprovementError] = useState<string | null>(null);
+  const [improvement, setImprovement] = useState<{
+    qualityScore: number;
+    summary: string;
+    issues: Array<{
+      severity: "high" | "medium" | "low";
+      field: string;
+      title: string;
+      message: string;
+      question: string;
+    }>;
+    changes: Array<{ field: string; before: string; after: string; reason: string }>;
+    proposedProfile: JobProfile;
+    promptVersion: string;
+  } | null>(null);
 
   const missing = missingFieldsForPublish(profile);
   const warnings = profile.extraction_metadata.warnings;
   const confidence = profile.extraction_metadata.confidence;
+  const quality = analyzeJobProfileQuality(profile);
 
   function update(patch: Partial<JobProfile>) {
     setProfile((prev) => ({ ...prev, ...patch }));
@@ -232,8 +252,123 @@ function ReviewForm({
     });
   }
 
+  function requestImprovement() {
+    setImprovementError(null);
+    startImprovement(async () => {
+      const result = await improveJobProfileAction(profileVersionId, JSON.stringify(profile));
+      if ("error" in result) {
+        setImprovementError(result.error ?? "No se pudo preparar la propuesta.");
+        return;
+      }
+      setImprovement(result.improvement);
+    });
+  }
+
   return (
     <form action={handleSubmit} className="space-y-6">
+      <section className="rounded-2xl border border-brand-purple/20 bg-brand-purple/5 p-5 space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="rounded-xl bg-white p-2 text-brand-purple shadow-sm">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="font-display font-semibold text-brand-navy">Asistente de calidad</h2>
+                <span className="rounded-full border border-brand-purple/20 bg-white px-2 py-0.5 text-xs font-medium text-brand-purple">
+                  {quality.score}/100 · {quality.label}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-gray-600">
+                Revisión opcional. Puedes publicar sin usarla.
+              </p>
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isImproving}
+            onClick={requestImprovement}
+          >
+            {isImproving ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="mr-2 h-4 w-4" />
+            )}
+            Preparar mejora
+          </Button>
+        </div>
+
+        {quality.issues.length > 0 ? (
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {quality.issues.slice(0, 4).map((issue) => (
+              <li key={`${issue.field}-${issue.title}`} className="rounded-xl border border-white bg-white/80 p-3">
+                <p className="text-sm font-medium text-brand-navy">{issue.title}</p>
+                <p className="mt-0.5 text-xs text-gray-600">{issue.message}</p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="rounded-xl bg-white/80 p-3 text-sm text-gray-700">
+            La oferta ya contiene los elementos principales para construir el perfil.
+          </p>
+        )}
+
+        {improvementError && <p className="text-sm text-red-600">{improvementError}</p>}
+
+        {improvement && (
+          <div className="rounded-xl border border-brand-purple/20 bg-white p-4 space-y-3">
+            <div>
+              <p className="text-sm font-semibold text-brand-navy">Propuesta lista para comparar</p>
+              <p className="mt-1 text-sm text-gray-600">{improvement.summary}</p>
+            </div>
+
+            {improvement.changes.length > 0 && (
+              <ul className="space-y-1 text-xs text-gray-600">
+                {improvement.changes.slice(0, 5).map((change, index) => (
+                  <li key={`${change.field}-${index}`} className="flex gap-2">
+                    <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-green" />
+                    <span>
+                      <span className="font-medium text-brand-navy">{change.field}: </span>
+                      {change.after}
+                      <span className="block text-gray-500">{change.reason}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {improvement.issues.some((issue) => issue.question.trim()) && (
+              <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">
+                <p className="font-medium">Preguntas que la IA no debe inventar:</p>
+                <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                  {improvement.issues
+                    .filter((issue) => issue.question.trim())
+                    .slice(0, 3)
+                    .map((issue, index) => <li key={index}>{issue.question}</li>)}
+                </ul>
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                onClick={() => {
+                  setProfile(improvement.proposedProfile);
+                  setImprovement(null);
+                }}
+              >
+                <Check className="mr-2 h-4 w-4" />
+                Aplicar propuesta
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setImprovement(null)}>
+                Mantener versión actual
+              </Button>
+            </div>
+          </div>
+        )}
+      </section>
+
       {/* Confianza y advertencias */}
       <div className="rounded-2xl border border-gray-200 p-5 space-y-3">
         <div className="flex items-center justify-between">

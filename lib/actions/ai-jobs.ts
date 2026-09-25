@@ -5,6 +5,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { aiConfig, DOCUMENT_LIMITS, isAllowedMimeType, extensionForMime } from "@/lib/ai/config";
+import { constrainImprovedProfile } from "@/lib/ai/job-quality";
+import { AIExtractionError } from "@/lib/ai/provider";
+import { getJobImprovementProvider } from "@/lib/ai/providers";
 import {
   buildBenefits,
   buildDescription,
@@ -165,6 +168,68 @@ export async function retryJobDocumentAction(documentId: string) {
 
   revalidatePath(`/admin/jobs/new-ai/${documentId}/review`);
   return { success: true };
+}
+
+// ─── Asistente opcional de calidad ───────────────────────────────────────────
+
+/**
+ * Prepara una propuesta mejorada sin guardarla ni publicarla. El navegador la
+ * muestra como comparación y solo entra al formulario si la persona la acepta.
+ */
+export async function improveJobProfileAction(
+  profileVersionId: string,
+  profileJson: string
+) {
+  const { supabase } = await requireAdmin();
+
+  if (!aiConfig.enabled || !aiConfig.features.jobImprovement) {
+    return { error: "El asistente de mejora no está habilitado." };
+  }
+
+  const parsed = jobProfileSchema.safeParse(safeJson(profileJson));
+  if (!parsed.success) return { error: "El perfil actual no es válido." };
+
+  const { data: version } = await supabase
+    .from("job_profile_versions")
+    .select("id, status, job_id")
+    .eq("id", profileVersionId)
+    .maybeSingle();
+
+  if (!version || version.status !== "draft" || version.job_id) {
+    return { error: "Este perfil ya no está disponible para mejora." };
+  }
+
+  try {
+    const provider = getJobImprovementProvider();
+    const { data, metadata } = await provider.improveJobProfile(parsed.data);
+    const proposedProfile = constrainImprovedProfile(parsed.data, data.proposed_profile);
+
+    return {
+      success: true,
+      improvement: {
+        qualityScore: Math.max(0, Math.min(100, Math.round(data.quality_score))),
+        summary: data.summary,
+        issues: data.issues.slice(0, 5),
+        changes: data.changes.slice(0, 8),
+        proposedProfile,
+        promptVersion: metadata.promptVersion,
+      },
+    };
+  } catch (error) {
+    const message =
+      error instanceof AIExtractionError
+        ? error.message
+        : "No se pudo preparar la propuesta en este momento.";
+    return { error: message };
+  }
+}
+
+function safeJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
 }
 
 // ─── Confirmar y publicar ─────────────────────────────────────────────────────

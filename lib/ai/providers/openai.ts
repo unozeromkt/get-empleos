@@ -7,8 +7,14 @@ import {
   AIExtractionError,
   type AIProfileExtractionProvider,
   type AIExtractionResult,
+  type AIJobImprovementProvider,
+  type AISemanticMatchProvider,
   type AITalentQueryProvider,
 } from "@/lib/ai/provider";
+import {
+  jobImprovementSchema,
+  type JobImprovement,
+} from "@/lib/ai/schemas/job-improvement";
 import { jobProfileSchema, type JobProfile } from "@/lib/ai/schemas/job-profile";
 import {
   candidateProfileSchema,
@@ -30,6 +36,20 @@ import {
   buildTalentQueryUserPrompt,
 } from "@/lib/ai/prompts/talent-query";
 import { talentQuerySchema, type TalentQuery } from "@/lib/ai/schemas/talent-query";
+import {
+  matchAdjudicationResponseSchema,
+  type MatchAdjudicationResponse,
+} from "@/lib/ai/schemas/match-adjudication";
+import {
+  JOB_IMPROVEMENT_PROMPT_VERSION,
+  JOB_IMPROVEMENT_SYSTEM_PROMPT,
+  buildJobImprovementUserPrompt,
+} from "@/lib/ai/prompts/job-improvement";
+import {
+  MATCH_ADJUDICATION_PROMPT_VERSION,
+  MATCH_ADJUDICATION_SYSTEM_PROMPT,
+  buildMatchAdjudicationUserPrompt,
+} from "@/lib/ai/prompts/match-adjudication";
 
 /**
  * Precios por millón de tokens, en USD. Verificados el 2026-08-11 contra
@@ -203,7 +223,10 @@ async function extractStructured<T>(
   }
 }
 
-export const openAIProvider: AIProfileExtractionProvider & AITalentQueryProvider = {
+export const openAIProvider: AIProfileExtractionProvider &
+  AITalentQueryProvider &
+  AIJobImprovementProvider &
+  AISemanticMatchProvider = {
   name: "openai",
 
   async extractJobProfile(
@@ -247,6 +270,26 @@ export const openAIProvider: AIProfileExtractionProvider & AITalentQueryProvider
       TALENT_QUERY_SYSTEM_PROMPT,
       buildTalentQueryUserPrompt(wrappedQuery),
       TALENT_QUERY_PROMPT_VERSION
+    );
+  },
+
+  async improveJobProfile(profile: JobProfile): Promise<AIExtractionResult<JobImprovement>> {
+    return extractStructured(
+      jobImprovementSchema,
+      "job_improvement",
+      JOB_IMPROVEMENT_SYSTEM_PROMPT,
+      buildJobImprovementUserPrompt(profile),
+      JOB_IMPROVEMENT_PROMPT_VERSION
+    );
+  },
+
+  async adjudicateMatch(payload: unknown): Promise<AIExtractionResult<MatchAdjudicationResponse>> {
+    return extractStructured(
+      matchAdjudicationResponseSchema,
+      "match_adjudication",
+      MATCH_ADJUDICATION_SYSTEM_PROMPT,
+      buildMatchAdjudicationUserPrompt(payload),
+      MATCH_ADJUDICATION_PROMPT_VERSION
     );
   },
 };

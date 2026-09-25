@@ -2,6 +2,37 @@ import Link from "next/link";
 import Image from "next/image";
 import { MapPin, Phone, Mail, ExternalLink, Share2 } from "lucide-react";
 
+const RESPONSIBLE_EVALUATION_REFERENCES = [
+  {
+    label: "ISO 10667-2 — evaluación en selección",
+    href: "https://www.iso.org/obp/ui?_escaped_fragment_=iso%3Astd%3Aiso%3A10667%3A-2%3Aed-2%3Av1%3Aen",
+  },
+  {
+    label: "ISO 30405 — directrices de contratación",
+    href: "https://www.iso.org/standard/79488.html",
+  },
+  {
+    label: "SIC — Circular Externa 002 de 2024",
+    href: "https://sedeelectronica.sic.gov.co/transparencia/normativa/circular-externa-2-de-2024-de-la-superintendencia-de-industria-y-comercio-lineamientos-sobre-el-tratamiento-de-datos",
+  },
+  {
+    label: "Ley 1581 de 2012 — protección de datos",
+    href: "https://www.funcionpublica.gov.co/eva/gestornormativo/norma.php?i=49981",
+  },
+  {
+    label: "Ley 2466 de 2025 — reforma laboral",
+    href: "https://www.funcionpublica.gov.co/eva/gestornormativo/norma.php?i=260676",
+  },
+  {
+    label: "NIST AI RMF — gestión de riesgos de IA",
+    href: "https://www.nist.gov/itl/ai-risk-management-framework",
+  },
+  {
+    label: "SIOP — IA en evaluación y selección",
+    href: "https://www.siop.org/wp-content/uploads/2024/12/Artificial-Intelligence-in-Talent-Assessment-and-Selection.pdf",
+  },
+] as const;
+
 export function Footer() {
   const year = new Date().getFullYear();
 
@@ -120,6 +151,32 @@ export function Footer() {
               </a>
             </div>
           </div>
+        </div>
+
+        <div className="mt-10 border-t border-white/10 pt-6">
+          <h3 className="font-semibold text-sm text-white/80">
+            Marco de evaluación responsable
+          </h3>
+          <p className="mt-1 max-w-4xl text-xs leading-relaxed text-white/45">
+            El diseño del sistema considera estas normas y guías sobre selección,
+            privacidad, explicabilidad y gestión de riesgos. Son referencias de diseño;
+            su publicación aquí no implica certificación ISO ni aval de las entidades.
+          </p>
+          <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-2">
+            {RESPONSIBLE_EVALUATION_REFERENCES.map(({ label, href }) => (
+              <li key={href}>
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-white/55 transition-colors hover:text-white"
+                >
+                  {label}
+                  <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                </a>
+              </li>
+            ))}
+          </ul>
         </div>
 
         <div className="mt-10 pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3">

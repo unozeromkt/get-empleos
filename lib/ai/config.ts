@@ -57,6 +57,10 @@ export const aiConfig = {
     resumeParsing: flag("FEATURE_AI_RESUME_PARSING"),
     matching: flag("FEATURE_AI_MATCHING"),
     talentSearch: flag("FEATURE_AI_TALENT_SEARCH"),
+    /** Activa la segunda opinión solo para requisitos ambiguos. */
+    semanticAdjudication: flag("FEATURE_AI_SEMANTIC_ADJUDICATION", true),
+    /** El botón de mejora es opcional y nunca bloquea publicar. */
+    jobImprovement: flag("FEATURE_AI_JOB_IMPROVEMENT", true),
   },
 } as const;
 

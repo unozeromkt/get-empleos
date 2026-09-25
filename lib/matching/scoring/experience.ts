@@ -7,6 +7,7 @@ import type {
   ExperienceWeights,
   JobRequirements,
   RequirementResult,
+  SemanticAdjudication,
 } from "@/lib/matching/types";
 
 /**
@@ -24,7 +25,8 @@ import type {
 export function scoreExperience(
   job: JobRequirements,
   candidate: CandidateEvidence,
-  weights: ExperienceWeights
+  weights: ExperienceWeights,
+  adjudications: SemanticAdjudication[] = []
 ): CategoryOutcome {
   const requiresYears = job.experience.minimumYears !== null;
   const requiresRoles = job.experience.relevantRoles.length > 0;
@@ -84,25 +86,37 @@ export function scoreExperience(
   // ── 2. Similitud de cargos ──
   if (requiresRoles || job.title) {
     const best = bestRoleMatch(roleTargets, candidate);
+    const requirementText = `Experiencia en cargos similares a: ${roleTargets.join(", ")}`;
+    const adjudication = findAdjudication(adjudications, "experience", requirementText);
+    const useAdjudication = !!adjudication && adjudication.matchScore > best.score;
+    const roleScore = useAdjudication ? adjudication.matchScore : best.score;
 
     results.push({
       type: "experience",
-      requirementText: `Experiencia en cargos similares a: ${roleTargets.join(", ")}`,
+      requirementText,
       importance: requiresRoles ? "required" : "preferred",
-      status: statusFromScore(best.score, candidate.experience.length === 0),
-      matchType: matchTypeFromScore(best.score, candidate.experience.length === 0),
-      matchScore: round2(best.score),
-      candidateEvidence: best.evidence,
-      candidateValue: best.title,
-      confidence: candidate.extractionConfidence,
+      status: useAdjudication
+        ? adjudication.status
+        : statusFromScore(best.score, candidate.experience.length === 0),
+      matchType: useAdjudication
+        ? "semantic"
+        : matchTypeFromScore(best.score, candidate.experience.length === 0),
+      matchScore: round2(roleScore),
+      candidateEvidence: useAdjudication ? adjudication.candidateEvidence : best.evidence,
+      candidateValue: useAdjudication ? adjudication.candidateValue : best.title,
+      confidence: useAdjudication ? adjudication.confidence : candidate.extractionConfidence,
     });
 
-    parts.push({ value: best.score, weight: weights.role_similarity });
+    parts.push({ value: roleScore, weight: weights.role_similarity });
   }
 
   // ── 3. Cobertura de responsabilidades (§16) ──
   if (requiresResponsibilities) {
-    const coverage = scoreResponsibilityCoverage(job.responsibilities, candidate);
+    const coverage = scoreResponsibilityCoverage(
+      job.responsibilities,
+      candidate,
+      adjudications
+    );
     results.push(...coverage.results);
     // Un CV que solo enumera cargos no demuestra incumplimiento de cada
     // función. Sin descripción laboral, la señal queda fuera del denominador y
@@ -157,7 +171,8 @@ export function scoreExperience(
  */
 export function scoreResponsibilityCoverage(
   responsibilities: string[],
-  candidate: CandidateEvidence
+  candidate: CandidateEvidence,
+  adjudications: SemanticAdjudication[] = []
 ): { average: number | null; results: RequirementResult[] } {
   // Solo evidencia de tareas realizadas. El título del cargo y el resumen
   // profesional se evalúan en señales separadas: usarlos aquí producía falsos
@@ -180,17 +195,27 @@ export function scoreResponsibilityCoverage(
     const best = bestEvidenceMatch([responsibility], blocks, "pooled");
     const credit = best ? coverageCredit(best.similarity) : 0;
     const noData = blocks.length === 0;
+    const adjudication = findAdjudication(adjudications, "responsibility", responsibility);
+    const useAdjudication = !!adjudication && adjudication.matchScore > credit;
 
     return {
       type: "responsibility",
       requirementText: responsibility,
       importance: "required",
-      status: statusFromCredit(credit, noData),
-      matchType: matchTypeFromCredit(credit, noData),
-      matchScore: round2(credit),
-      candidateEvidence: credit > 0 ? (best?.text ?? "") : "",
-      candidateValue: credit > 0 ? (best?.context ?? null) : null,
-      confidence: candidate.extractionConfidence,
+      status: useAdjudication ? adjudication.status : statusFromCredit(credit, noData),
+      matchType: useAdjudication ? "semantic" : matchTypeFromCredit(credit, noData),
+      matchScore: round2(useAdjudication ? adjudication.matchScore : credit),
+      candidateEvidence: useAdjudication
+        ? adjudication.candidateEvidence
+        : credit > 0
+          ? (best?.text ?? "")
+          : "",
+      candidateValue: useAdjudication
+        ? adjudication.candidateValue
+        : credit > 0
+          ? (best?.context ?? null)
+          : null,
+      confidence: useAdjudication ? adjudication.confidence : candidate.extractionConfidence,
     };
   });
 
@@ -200,6 +225,17 @@ export function scoreResponsibilityCoverage(
       : results.reduce((sum, r) => sum + r.matchScore, 0) / results.length;
 
   return { average, results };
+}
+
+function findAdjudication(
+  adjudications: SemanticAdjudication[],
+  type: SemanticAdjudication["type"],
+  requirementText: string
+): SemanticAdjudication | undefined {
+  const normalized = normalizeForComparison(requirementText);
+  return adjudications.find(
+    (item) => item.type === type && normalizeForComparison(item.requirementText) === normalized
+  );
 }
 
 function bestRoleMatch(

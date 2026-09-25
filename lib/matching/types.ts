@@ -8,7 +8,7 @@
  * nunca participa en el cálculo.
  */
 
-export const SCORING_VERSION = "v4";
+export const SCORING_VERSION = "v5";
 
 /**
  * Las categorías ponderadas de la spec §12.1, más `location`.
@@ -101,6 +101,18 @@ export interface RequirementResult {
   /** Con qué habilidad del candidato se emparejó. */
   candidateValue: string | null;
   confidence: number;
+}
+
+/** Decisión semántica limitada: siempre respaldada por una cita del CV. */
+export interface SemanticAdjudication {
+  type: "skill" | "experience" | "responsibility";
+  requirementText: string;
+  status: "matched" | "partial";
+  matchScore: number;
+  candidateEvidence: string;
+  candidateValue: string;
+  confidence: number;
+  reason: string;
 }
 
 export interface CategoryOutcome {

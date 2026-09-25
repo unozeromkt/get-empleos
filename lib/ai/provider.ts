@@ -1,5 +1,7 @@
 import type { CandidateProfile } from "@/lib/ai/schemas/candidate-profile";
+import type { JobImprovement } from "@/lib/ai/schemas/job-improvement";
 import type { JobProfile } from "@/lib/ai/schemas/job-profile";
+import type { MatchAdjudicationResponse } from "@/lib/ai/schemas/match-adjudication";
 import type { TalentQuery } from "@/lib/ai/schemas/talent-query";
 
 /**
@@ -90,4 +92,16 @@ export interface AITalentQueryProvider {
    * AIExtractionError si no valida.
    */
   parseTalentQuery(wrappedQuery: string): Promise<AIExtractionResult<TalentQuery>>;
+}
+
+/** Mejora opcional de una oferta ya extraída; nunca publica por sí sola. */
+export interface AIJobImprovementProvider {
+  readonly name: string;
+  improveJobProfile(profile: JobProfile): Promise<AIExtractionResult<JobImprovement>>;
+}
+
+/** Segunda opinión semántica limitada a requisitos ambiguos y evidencia citable. */
+export interface AISemanticMatchProvider {
+  readonly name: string;
+  adjudicateMatch(payload: unknown): Promise<AIExtractionResult<MatchAdjudicationResponse>>;
 }

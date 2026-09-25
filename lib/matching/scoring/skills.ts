@@ -11,6 +11,7 @@ import type {
   CategoryOutcome,
   JobSkillRequirement,
   RequirementResult,
+  SemanticAdjudication,
 } from "@/lib/matching/types";
 
 /**
@@ -32,7 +33,8 @@ const EXPERIENCE_EVIDENCE_SCORE = 0.85;
  */
 export function scoreSkills(
   requirements: JobSkillRequirement[],
-  candidate: CandidateEvidence
+  candidate: CandidateEvidence,
+  adjudications: SemanticAdjudication[] = []
 ): CategoryOutcome {
   // Si la oferta no exige nada en esta categoría, se devuelve null para que el
   // peso salga del denominador en lugar de penalizar al candidato (spec §12.2)
@@ -47,7 +49,7 @@ export function scoreSkills(
   const evidenceBlocks = buildEvidenceBlocks(candidate);
 
   const results: RequirementResult[] = requirements.map((req) =>
-    evaluateSkill(req, candidate, evidenceBlocks)
+    evaluateSkill(req, candidate, evidenceBlocks, adjudications)
   );
 
   // Si de NINGÚN requisito se pudo obtener evidencia, la categoría no es
@@ -75,10 +77,12 @@ export function scoreSkills(
 function evaluateSkill(
   req: JobSkillRequirement,
   candidate: CandidateEvidence,
-  evidenceBlocks: EvidenceBlock[]
+  evidenceBlocks: EvidenceBlock[],
+  adjudications: SemanticAdjudication[]
 ): RequirementResult {
   const match = matchSkill(req.rawName, candidate.skills, req.canonicalName);
   const matched = match.candidateIndex >= 0 ? candidate.skills[match.candidateIndex] : null;
+  const adjudication = findAdjudication(adjudications, "skill", req.rawName);
 
   if (!matched) {
     // Segunda pasada: buscar la habilidad en la experiencia laboral antes de
@@ -86,7 +90,7 @@ function evaluateSkill(
     const fromExperience = findInExperience(req, evidenceBlocks);
 
     if (fromExperience) {
-      return {
+      const inferred: RequirementResult = {
         type: "skill",
         requirementText: req.rawName,
         importance: req.importance,
@@ -97,7 +101,12 @@ function evaluateSkill(
         candidateValue: fromExperience.text,
         confidence: candidate.extractionConfidence,
       };
+      return adjudication && adjudication.matchScore > inferred.matchScore
+        ? fromAdjudication(req, adjudication)
+        : inferred;
     }
+
+    if (adjudication) return fromAdjudication(req, adjudication);
 
     // Sin nada en la lista de habilidades NI en la experiencia: solo se puede
     // afirmar que falta si el CV aportó algo con qué comparar (spec §8)
@@ -132,7 +141,7 @@ function evaluateSkill(
     }
   }
 
-  return {
+  const deterministic: RequirementResult = {
     type: "skill",
     requirementText: req.rawName,
     importance: req.importance,
@@ -143,6 +152,47 @@ function evaluateSkill(
     candidateValue: matched.rawName,
     confidence: matched.confidence,
   };
+
+  return adjudication && adjudication.matchScore > deterministic.matchScore
+    ? fromAdjudication(req, adjudication)
+    : deterministic;
+}
+
+function fromAdjudication(
+  req: JobSkillRequirement,
+  adjudication: SemanticAdjudication
+): RequirementResult {
+  return {
+    type: "skill",
+    requirementText: req.rawName,
+    importance: req.importance,
+    status: adjudication.status,
+    matchType: "semantic",
+    matchScore: adjudication.matchScore,
+    candidateEvidence: adjudication.candidateEvidence,
+    candidateValue: adjudication.candidateValue,
+    confidence: adjudication.confidence,
+  };
+}
+
+function findAdjudication(
+  adjudications: SemanticAdjudication[],
+  type: SemanticAdjudication["type"],
+  requirementText: string
+): SemanticAdjudication | undefined {
+  const normalized = normalizeRequirement(requirementText);
+  return adjudications.find(
+    (item) => item.type === type && normalizeRequirement(item.requirementText) === normalized
+  );
+}
+
+function normalizeRequirement(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 /**
