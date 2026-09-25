@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { LayoutDashboard, Briefcase, Users, PlusCircle } from "lucide-react";
 import { AdminSidebar } from "@/components/layout/AdminSidebar";
+import { ResponsibleEvaluationFramework } from "@/components/admin/ResponsibleEvaluationFramework";
 
 const MOBILE_NAV = [
   { href: "/admin",            label: "Dashboard", icon: LayoutDashboard },
@@ -21,6 +22,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <main className="flex-1 min-w-0 flex flex-col">
         <div className="flex-1 p-4 md:p-8 pb-20 md:pb-8">
           {children}
+          <ResponsibleEvaluationFramework />
         </div>
       </main>
 
