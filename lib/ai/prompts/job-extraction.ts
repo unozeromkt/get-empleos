@@ -6,7 +6,7 @@
  * pueda explicar meses después (spec §22).
  */
 
-export const JOB_EXTRACTION_PROMPT_VERSION = "job-extraction-v1";
+export const JOB_EXTRACTION_PROMPT_VERSION = "job-extraction-v3";
 
 export const JOB_EXTRACTION_SYSTEM_PROMPT = `Eres un motor de extracción de datos estructurados para descripciones de cargo.
 
@@ -33,6 +33,32 @@ que lo sustente. Si no puedes citar el documento, no deberías estar extrayendo 
 
 CLASIFICACIÓN DE HABILIDADES
 Clasifica cada habilidad como: technical, tool, domain, transferable, language u other.
+
+ATOMICIDAD Y RELACIÓN CON EL CARGO
+- Cada elemento de 'required_skills' debe representar UNA competencia evaluable.
+  Separa "alistamiento de pedidos e inventarios" en dos elementos si el documento
+  realmente exige ambos.
+- No conviertas automáticamente cada función del cargo en una habilidad requerida.
+  Las funciones van en 'responsibilities'; las habilidades solo si el documento las
+  presenta como conocimiento, capacidad, requisito o competencia.
+- Conserva en 'responsibilities' todas las funciones, pero no inventes que son
+  criterios excluyentes ni que su ausencia en un CV demuestra incumplimiento.
+- No conviertas una lista de ALTERNATIVAS en varios requisitos simultáneos. Por
+  ejemplo, "experiencia en producción textil, confección, empaque o bodega"
+  expresa rutas alternativas: consérvala en 'experience_requirements' y NO
+  crees cuatro habilidades must_have. Las expresiones "o" / "y/o" nunca se
+  interpretan como que el candidato deba cumplir todas las opciones.
+
+COMPETENCIAS CONDUCTUALES
+- Extrae habilidades transferibles solo si el documento las solicita de forma
+  explícita; no derives rasgos psicológicos ni perfiles de personalidad.
+- Responsabilidad, honestidad, resiliencia, liderazgo o trabajo en equipo no se
+  pueden validar desde el estilo de redacción del CV. Estas competencias sirven
+  para generar preguntas de entrevista y solo se puntúan cuando haya evidencia
+  laboral concreta o una evaluación estructurada posterior.
+- No dupliques una misma exigencia como requisito técnico, responsabilidad y
+  competencia conductual salvo que el documento realmente establezca tres
+  criterios distintos.
 
 IMPORTANCIA DE LOS REQUISITOS
 Clasifica la importancia SOLO cuando el lenguaje del documento la respalde:

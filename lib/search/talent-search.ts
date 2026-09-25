@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { TALENT_SEARCH_LIMITS } from "@/lib/ai/config";
-import { candidateProfileSchema } from "@/lib/ai/schemas/candidate-profile";
+import { parseCandidateProfile } from "@/lib/ai/schemas/candidate-profile";
 import type { TalentQuery } from "@/lib/ai/schemas/talent-query";
 import { toCandidateEvidence } from "@/lib/matching/adapters";
 import { DEFAULT_SCORING_CONFIG } from "@/lib/matching/config";
@@ -140,7 +140,7 @@ export async function runTalentSearch(
   for (const version of versions ?? []) {
     // Lo confirmado por la persona manda sobre lo inferido por la IA (spec §33)
     const raw = version.confirmed_profile ?? version.ai_profile;
-    const parsed = candidateProfileSchema.safeParse(raw);
+    const parsed = parseCandidateProfile(raw);
 
     // Un perfil que no valida contra su schema se salta en silencio: es un dato
     // roto, no un candidato malo, y ensuciar el ranking con él sería peor.

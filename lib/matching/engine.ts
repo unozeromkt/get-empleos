@@ -75,7 +75,10 @@ export function calculateMatch(
     requirements,
     criticalGaps,
     explanation: buildExplanation(requirements, criticalGaps, categoryScores, candidate),
-    scoringVersion: config.version || SCORING_VERSION,
+    // La versión del motor no puede quedar ocultada por la versión de pesos.
+    // Si cambia la lógica pero la tabla conserva los mismos pesos, el hash de
+    // idempotencia debe cambiar y generar un nuevo resultado histórico.
+    scoringVersion: `${SCORING_VERSION}:${config.version || "default"}`,
     appliedWeights,
   };
 }

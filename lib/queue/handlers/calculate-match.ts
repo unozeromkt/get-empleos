@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { candidateProfileSchema } from "@/lib/ai/schemas/candidate-profile";
+import { parseCandidateProfile } from "@/lib/ai/schemas/candidate-profile";
 import { jobProfileSchema } from "@/lib/ai/schemas/job-profile";
 import { sha256 } from "@/lib/documents/hash";
 import { toCandidateEvidence, toJobRequirements } from "@/lib/matching/adapters";
@@ -79,7 +79,7 @@ export async function handleCalculateMatch(
   const rawCandidateProfile = candidateVersion.confirmed_profile ?? candidateVersion.ai_profile;
 
   const parsedJob = jobProfileSchema.safeParse(jobVersion.profile);
-  const parsedCandidate = candidateProfileSchema.safeParse(rawCandidateProfile);
+  const parsedCandidate = parseCandidateProfile(rawCandidateProfile);
 
   if (!parsedJob.success || !parsedCandidate.success) {
     return {
@@ -104,6 +104,7 @@ export async function handleCalculateMatch(
       job: jobVersion.id,
       candidate: candidateVersion.id,
       scoring: config.version,
+      engine: result.scoringVersion,
     })
   );
 

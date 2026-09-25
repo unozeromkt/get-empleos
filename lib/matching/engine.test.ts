@@ -597,4 +597,64 @@ describe("regresión — categoría sin evidencia no puede valer 0", () => {
     // La única categoría evaluable está al 100%, así que el total es 100
     expect(result.overallScore).toBe(100);
   });
+
+  it("no convierte otras experiencias del CV en evidencia negativa de una habilidad blanda", () => {
+    const result = calculateMatch(
+      job({
+        skills: [
+          {
+            rawName: "liderazgo",
+            canonicalName: "Liderazgo",
+            category: "transferable",
+            importance: "required",
+            minimumYears: null,
+          },
+        ],
+      }),
+      candidate({
+        skills: [candidateSkill("Excel")],
+        experience: [
+          {
+            title: "Analista",
+            company: "X",
+            responsibilities: ["Elaboración de reportes"],
+            achievements: [],
+            skills: ["Excel"],
+          },
+        ],
+      })
+    );
+
+    expect(result.requirements[0].status).toBe("unknown");
+    expect(result.categoryScores.transferable_skills).toBeNull();
+    expect(result.explanation.questionsForRecruiter[0]).toContain("liderazgo");
+  });
+
+  it("puntúa una habilidad blanda cuando existe evidencia laboral concreta", () => {
+    const result = calculateMatch(
+      job({
+        skills: [
+          {
+            rawName: "liderazgo",
+            canonicalName: "Liderazgo",
+            category: "transferable",
+            importance: "required",
+            minimumYears: null,
+          },
+        ],
+      }),
+      candidate({
+        transferableSkills: [
+          {
+            name: "liderazgo",
+            evidence: "Coordinó un equipo de 12 operarios y cumplió la meta semanal",
+            confidence: 0.9,
+          },
+        ],
+      })
+    );
+
+    expect(result.requirements[0].status).toBe("matched");
+    expect(result.categoryScores.transferable_skills).toBe(90);
+  });
 });

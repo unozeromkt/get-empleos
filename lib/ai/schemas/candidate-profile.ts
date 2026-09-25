@@ -54,6 +54,11 @@ export const candidateProfileSchema = z.object({
       /** Formato ISO parcial: "2021-03" o "2021". null si el CV no lo dice. */
       start_date: z.string().nullable(),
       end_date: z.string().nullable(),
+      /**
+       * Duración declarada o calculable del cargo. Permite conservar CVs que
+       * dicen "TIEMPO LABORADO: 5 años y 8 meses" pero no traen fechas.
+       */
+      duration_months: z.number().nullable(),
       current: z.boolean(),
       responsibilities: z.array(z.string()),
       achievements: z.array(z.string()),
@@ -144,3 +149,29 @@ export const candidateProfileSchema = z.object({
 });
 
 export type CandidateProfile = z.infer<typeof candidateProfileSchema>;
+
+/**
+ * Los perfiles v1 ya persistidos no tienen `duration_months`. Esta función
+ * los actualiza en memoria antes de validarlos; los nuevos Structured Outputs
+ * siguen usando el schema estricto y deben enviar el campo explícitamente.
+ */
+export function parseCandidateProfile(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return candidateProfileSchema.safeParse(value);
+  }
+
+  const raw = value as Record<string, unknown>;
+  const experience = Array.isArray(raw.experience)
+    ? raw.experience.map((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+        const entry = item as Record<string, unknown>;
+        return {
+          ...entry,
+          duration_months:
+            typeof entry.duration_months === "number" ? entry.duration_months : null,
+        };
+      })
+    : raw.experience;
+
+  return candidateProfileSchema.safeParse({ ...raw, experience });
+}

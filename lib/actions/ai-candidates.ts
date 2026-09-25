@@ -8,7 +8,7 @@ import {
   type FlatCandidateFields,
 } from "@/lib/ai/candidate-mapper";
 import {
-  candidateProfileSchema,
+  parseCandidateProfile,
   type CandidateProfile,
 } from "@/lib/ai/schemas/candidate-profile";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -77,7 +77,7 @@ export async function getProfileSuggestionsAction() {
 
   if (!version) return { error: "Todavía no hay un perfil extraído de tu hoja de vida." };
 
-  const parsed = candidateProfileSchema.safeParse(version.ai_profile);
+  const parsed = parseCandidateProfile(version.ai_profile);
   if (!parsed.success) {
     return { error: "El perfil extraído no es válido. Vuelve a subir tu hoja de vida." };
   }

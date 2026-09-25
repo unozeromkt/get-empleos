@@ -84,6 +84,7 @@ export function toCandidateEvidence(profile: CandidateProfile): CandidateEvidenc
   const experience = profile.experience.map((e) => ({
     title: e.title,
     company: e.company,
+    durationMonths: e.duration_months,
     responsibilities: e.responsibilities,
     achievements: e.achievements,
     skills: e.skills,

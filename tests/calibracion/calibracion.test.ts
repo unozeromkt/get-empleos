@@ -62,8 +62,9 @@ describe("calibración — Operario(a) Call Center (Neiva)", () => {
     );
 
     // No hay una sola línea del CV sobre trabajo bajo presión. Que la
-    // candidata sea buena no autoriza a dar por cumplido lo que no está.
-    expect(presion?.status).toBe("not_found");
+    // candidata sea buena no autoriza a darlo por cumplido ni a afirmar que
+    // carece de esa competencia: debe verificarse en entrevista.
+    expect(presion?.status).toBe("unknown");
   });
 
   it("un perfil ajeno al cargo se queda muy por debajo", () => {

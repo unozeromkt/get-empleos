@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { updateApplicationStatusAction } from "@/lib/actions/applications";
 import { DOCUMENT_LIMITS, extensionForMime, isAllowedMimeType } from "@/lib/ai/config";
 import { sha256 } from "@/lib/documents/hash";
+import { calculateRequirementsScore } from "@/lib/matching/requirement-score";
 import { dispatchPendingRuns } from "@/lib/queue/dispatch";
 import { enqueueRun } from "@/lib/queue/enqueue";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -102,21 +103,31 @@ export async function listJobCandidatesAction(jobId: string): Promise<ScreeningR
   if (matchIds.length > 0) {
     const { data: reqs } = await supabase
       .from("match_requirement_results")
-      .select("match_result_id, importance, match_score")
+      .select("match_result_id, importance, status, match_score")
       .in("match_result_id", matchIds);
 
-    const grouped = new Map<string, { earned: number; total: number }>();
+    const grouped = new Map<
+      string,
+      Array<{
+        importance: "must_have" | "required" | "preferred";
+        status: "matched" | "partial" | "unknown" | "not_found";
+        matchScore: number;
+      }>
+    >();
     for (const r of reqs ?? []) {
-      if (r.importance === "preferred") continue; // solo cuentan los obligatorios
       const key = r.match_result_id as string;
-      const acc = grouped.get(key) ?? { earned: 0, total: 0 };
-      acc.total += 1;
-      acc.earned += Number(r.match_score);
-      grouped.set(key, acc);
+      const values = grouped.get(key) ?? [];
+      values.push({
+        importance: r.importance as "must_have" | "required" | "preferred",
+        status: r.status as "matched" | "partial" | "unknown" | "not_found",
+        matchScore: Number(r.match_score),
+      });
+      grouped.set(key, values);
     }
 
-    grouped.forEach((acc, key) => {
-      requirementsByMatch.set(key, acc.total === 0 ? 0 : Math.round((100 * acc.earned) / acc.total));
+    grouped.forEach((requirements, key) => {
+      const score = calculateRequirementsScore(requirements);
+      if (score !== null) requirementsByMatch.set(key, score);
     });
   }
 

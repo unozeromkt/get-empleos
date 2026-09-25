@@ -1,4 +1,4 @@
-import { bestEvidenceMatch, buildEvidenceBlocks } from "@/lib/matching/evidence";
+import { bestEvidenceMatch } from "@/lib/matching/evidence";
 import { conceptSimilarity } from "@/lib/matching/normalize/skill-normalizer";
 import { coverageCredit } from "@/lib/matching/scoring/coverage";
 import type {
@@ -38,17 +38,19 @@ export function scoreExperience(
 
   const results: RequirementResult[] = [];
   const parts: Array<{ value: number; weight: number }> = [];
+  const roleTargets = requiresRoles ? job.experience.relevantRoles : [job.title];
 
   // ── 1. Años relevantes ──
   if (requiresYears) {
     const required = job.experience.minimumYears as number;
-    const actual = candidate.totalYearsExperience;
+    const relevant = relevantYearsFromRoles(roleTargets, candidate);
+    const actual = relevant ?? candidate.totalYearsExperience;
 
     if (actual === null) {
       // El CV no permitió calcularlos. No es una carencia: es desconocido (§8)
       results.push({
         type: "experience",
-        requirementText: `Mínimo ${required} años de experiencia`,
+        requirementText: `Mínimo ${required} años de experiencia relevante`,
         importance: "required",
         status: "unknown",
         matchType: "unknown",
@@ -63,12 +65,15 @@ export function scoreExperience(
       const fit = Math.min(1, actual / required);
       results.push({
         type: "experience",
-        requirementText: `Mínimo ${required} años de experiencia`,
+        requirementText: `Mínimo ${required} años de experiencia relevante`,
         importance: "required",
         status: fit >= 1 ? "matched" : "partial",
         matchType: fit >= 1 ? "exact" : "partial",
         matchScore: round2(fit),
-        candidateEvidence: `${actual} años de experiencia total`,
+        candidateEvidence:
+          relevant !== null
+            ? `${round2(actual)} años en cargos relacionados`
+            : `${round2(actual)} años de experiencia total`,
         candidateValue: `${actual} años`,
         confidence: candidate.extractionConfidence,
       });
@@ -78,12 +83,11 @@ export function scoreExperience(
 
   // ── 2. Similitud de cargos ──
   if (requiresRoles || job.title) {
-    const targets = requiresRoles ? job.experience.relevantRoles : [job.title];
-    const best = bestRoleMatch(targets, candidate);
+    const best = bestRoleMatch(roleTargets, candidate);
 
     results.push({
       type: "experience",
-      requirementText: `Experiencia en cargos similares a: ${targets.join(", ")}`,
+      requirementText: `Experiencia en cargos similares a: ${roleTargets.join(", ")}`,
       importance: requiresRoles ? "required" : "preferred",
       status: statusFromScore(best.score, candidate.experience.length === 0),
       matchType: matchTypeFromScore(best.score, candidate.experience.length === 0),
@@ -100,7 +104,12 @@ export function scoreExperience(
   if (requiresResponsibilities) {
     const coverage = scoreResponsibilityCoverage(job.responsibilities, candidate);
     results.push(...coverage.results);
-    parts.push({ value: coverage.average, weight: weights.responsibility_coverage });
+    // Un CV que solo enumera cargos no demuestra incumplimiento de cada
+    // función. Sin descripción laboral, la señal queda fuera del denominador y
+    // baja la confianza; no convierte ausencia de detalle en un cero.
+    if (coverage.average !== null) {
+      parts.push({ value: coverage.average, weight: weights.responsibility_coverage });
+    }
   }
 
   // ── 4. Sector, solo si la oferta lo exige ──
@@ -149,8 +158,23 @@ export function scoreExperience(
 export function scoreResponsibilityCoverage(
   responsibilities: string[],
   candidate: CandidateEvidence
-): { average: number; results: RequirementResult[] } {
-  const blocks = buildEvidenceBlocks(candidate);
+): { average: number | null; results: RequirementResult[] } {
+  // Solo evidencia de tareas realizadas. El título del cargo y el resumen
+  // profesional se evalúan en señales separadas: usarlos aquí producía falsos
+  // positivos como asociar "persona responsable" con "recibir mercancía".
+  const blocks = candidate.experience.flatMap((job) => {
+    const title = normalizeForComparison(job.title);
+    const texts = [
+      ...job.responsibilities,
+      ...job.achievements,
+      // Extractores v1 repetían el título como skill. Eso no aporta detalle.
+      ...job.skills.filter((skill) => normalizeForComparison(skill) !== title),
+    ].filter((text) => !!text?.trim());
+
+    return texts.length > 0
+      ? [{ context: `${job.title}${job.company ? ` en ${job.company}` : ""}`, texts }]
+      : [];
+  });
 
   const results = responsibilities.map<RequirementResult>((responsibility) => {
     const best = bestEvidenceMatch([responsibility], blocks, "pooled");
@@ -171,7 +195,9 @@ export function scoreResponsibilityCoverage(
   });
 
   const average =
-    results.length === 0 ? 0 : results.reduce((sum, r) => sum + r.matchScore, 0) / results.length;
+    blocks.length === 0 || results.length === 0
+      ? null
+      : results.reduce((sum, r) => sum + r.matchScore, 0) / results.length;
 
   return { average, results };
 }
@@ -185,7 +211,12 @@ function bestRoleMatch(
   for (const job of candidate.experience) {
     for (const target of targets) {
       const similarity = conceptSimilarity(target, job.title);
-      if (similarity > best.score) {
+      if (
+        similarity > best.score ||
+        (similarity === best.score &&
+          (job.durationMonths ?? 0) >
+            (candidate.experience.find((e) => e.title === best.title)?.durationMonths ?? 0))
+      ) {
         best = {
           score: similarity,
           title: job.title,
@@ -196,6 +227,38 @@ function bestRoleMatch(
   }
 
   return best;
+}
+
+/**
+ * Años verificables en cargos conceptualmente relacionados con la oferta.
+ * Se usa antes que la experiencia total: diez años en otro oficio no deben
+ * satisfacer un requisito de un año de experiencia relevante.
+ */
+function relevantYearsFromRoles(
+  targets: string[],
+  candidate: CandidateEvidence
+): number | null {
+  let months = 0;
+  let foundDuration = false;
+
+  for (const job of candidate.experience) {
+    if (job.durationMonths === null || job.durationMonths === undefined) continue;
+    const similarity = Math.max(...targets.map((target) => conceptSimilarity(target, job.title)), 0);
+    if (similarity < MATCHED_THRESHOLD) continue;
+    months += Math.max(0, job.durationMonths);
+    foundDuration = true;
+  }
+
+  return foundDuration ? months / 12 : null;
+}
+
+function normalizeForComparison(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 /** Umbrales de clasificación. SIN CALIBRAR — ver §14 y Fase 6. */

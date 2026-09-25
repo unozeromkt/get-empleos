@@ -8,7 +8,7 @@
  * nunca participa en el cálculo.
  */
 
-export const SCORING_VERSION = "v2";
+export const SCORING_VERSION = "v4";
 
 /**
  * Las categorías ponderadas de la spec §12.1, más `location`.
@@ -189,6 +189,8 @@ export interface CandidateEvidence {
   experience: Array<{
     title: string;
     company: string;
+    /** Duración verificable del cargo; null/undefined si el CV no la permite calcular. */
+    durationMonths?: number | null;
     responsibilities: string[];
     achievements: string[];
     skills: string[];

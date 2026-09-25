@@ -106,7 +106,14 @@ const ALIASES: Record<string, string[]> = {
 
   // ── Logística y operaciones ──
   logistica: ["logistics", "cadena de suministro", "supply chain"],
-  "gestion de inventarios": ["inventarios", "control de inventario", "manejo de inventario"],
+  "auxiliar de bodega": [
+    "auxiliar logistico", "auxiliar de almacen", "operario de bodega",
+    "bodeguero", "almacenista",
+  ],
+  "gestion de inventarios": [
+    "inventarios", "control de inventario", "manejo de inventario",
+    "control de existencias",
+  ],
 
   // ── Idiomas ──
   ingles: ["english", "idioma ingles"],
@@ -131,7 +138,7 @@ const TAXONOMY: Record<string, string[]> = {
   "servicio al cliente": ["atencion telefonica", "escucha activa", "orientacion al cliente"],
   "bases de datos": ["microsoft excel", "sql", "crm"],
   contabilidad: ["nomina", "facturacion", "manejo de caja"],
-  logistica: ["gestion de inventarios"],
+  logistica: ["gestion de inventarios", "auxiliar de bodega"],
   "recursos humanos": ["nomina", "seleccion de personal"],
 };
 

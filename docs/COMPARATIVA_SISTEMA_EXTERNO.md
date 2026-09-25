@@ -254,3 +254,171 @@ es apuntar a texto que el motor comprueba.
 
 **Es una decisión de producto, no técnica**, y tiene costo por CV. Queda
 propuesta, no implementada.
+
+---
+
+## 9. Segundo caso: Auxiliar de Bodega vs. Daniel Hidalgo (2026-09-24)
+
+Este segundo caso permite separar con más certeza qué parte de la diferencia es
+un fallo nuestro y qué parte es una elección metodológica de Talent Scout.
+
+### Resultado observado en Talent Scout
+
+| Momento | Requisitos | CV | Total |
+|---|---:|---:|---:|
+| Captura entregada por el cliente | 83% | 58% | 71% |
+| Revisión directa del 24-09-2026 | 83% | 55% | 69% |
+
+El total vuelve a ser el promedio simple de los componentes disponibles. La
+variación de 58 a 55 en el mismo CV demuestra que su componente inferencial no
+es estable o fue recalculado con otra versión sin conservarla a la vista.
+
+Talent Scout consolidó la oferta en seis requisitos. `83%` equivale exactamente
+a cinco de seis cumplidos. Su componente CV no evalúa el contenido ocupacional:
+estima `Ethical-Leader`, `Altruistic-Creator`, `Assertive-Directive`,
+`Analytical-Autonomous`, `Resilient-Adaptive` y `Creative-Innovative` a partir
+del currículum. No se encontró evidencia visible de que esas seis escalas sean un
+instrumento psicométrico validado.
+
+### Diagnóstico del 34% de GetEmpleos v2
+
+El perfil estructurado y el detalle persistido confirmaron tres fallos:
+
+1. El CV dice literalmente `TIEMPO LABORADO: 5 años y 8 meses` como Auxiliar
+   logístico. El extractor v1 dejó los años totales en `null` porque solo admitía
+   fechas de inicio y fin.
+2. Al comparar cargos, `Auxiliar bachiller` y `Auxiliar logístico` empataban por
+   la palabra "auxiliar". El motor conservaba el primero y daba 0,5, aunque el
+   segundo es el oficio pertinente.
+3. La oferta trae nueve funciones. Como el CV enumera cargos pero no describe
+   tareas, el motor convirtió esa falta de detalle en nueve incumplimientos. Eso
+   contradice la regla central `sin evidencia != no cumple`.
+
+El 22% de "Requisitos" era el promedio de 15 renglones, incluyendo esas nueve
+funciones. Talent Scout promediaba seis criterios consolidados. Los porcentajes
+no estaban midiendo la misma unidad.
+
+### Corrección v3
+
+- El extractor conserva `duration_months` cuando el CV declara una duración.
+- Los cargos logísticos equivalentes se resuelven por taxonomía curada.
+- Las funciones sin evidencia de tareas quedan `unknown` y bajan la confianza;
+  no bajan artificialmente el match.
+- La cobertura visible de requisitos excluye `unknown` del denominador y
+  pondera `must_have` por encima de `required`.
+- Los prompts exigen habilidades atómicas y prohíben repetir un título de cargo
+  como si fuera una habilidad.
+
+Con el fixture reproducible, v3 obtiene **65/100**, cobertura de requisitos
+evaluables **69%** y banda **Datos insuficientes** por la escasez de funciones
+descritas. Es una lectura más favorable que 34 sin afirmar que el candidato sabe
+empacar, alistar o controlar inventarios cuando su CV no lo documenta.
+
+### Estándares de referencia
+
+- [ISO 10667-2:2020](https://www.iso.org/obp/ui#iso:std:iso:10667:-2:ed-2:v1:en)
+  incluye expresamente CV parsing, screening algorítmico e IA y exige enfoques
+  basados en evidencia, validez, confiabilidad, equidad y estandarización.
+- [SIOP](https://www.siop.org/wp-content/uploads/2025/12/UniformSelectionStatement_121525.pdf)
+  recomienda análisis del cargo, validación respecto al desempeño, monitoreo de
+  impacto adverso y documentación de las decisiones de diseño.
+- La [Circular Externa 002 de 2024 de la SIC](https://sedeelectronica.sic.gov.co/sites/default/files/normativa/Circular%20Externa%20No.%20002%20del%2021%20de%20agosto%20de%202024.pdf)
+  exige gestión de riesgos, responsabilidad demostrada, calidad de datos y una
+  evaluación de impacto de privacidad cuando el tratamiento con IA sea de alto
+  riesgo.
+- La [Ley 2466 de 2025](https://www.funcionpublica.gov.co/eva/gestornormativo/norma.php?i=260676)
+  refuerza la prohibición de discriminación laboral por rasgos personales no
+  relacionados con el ejercicio del cargo.
+
+Por esos criterios, inferir personalidad desde un CV y puntuarla sin prueba de
+validez es la parte menos defendible de Talent Scout. El principio correcto no
+es "usar o no IA", sino medir atributos relacionados con el trabajo, conservar
+evidencia, validar que predicen decisiones humanas/desempeño y vigilar impacto
+adverso.
+
+## 10. Ampliación de la muestra: cómo parece calcular Talent Scout (2026-09-24)
+
+Se inspeccionaron los perfiles generados y las tablas de candidatos de tres
+cargos que comparten fuente con Get Empleos:
+
+- Auxiliar de Bodega: 6 requisitos, 32 candidatos.
+- Auxiliar de Terminación de Confección: 7 requisitos, 20 candidatos.
+- Jefe de Producción: 6 requisitos, 9 candidatos.
+
+La muestra visible suma 61 evaluaciones. No permite conocer su código interno,
+pero sí reconstruir con bastante seguridad la aritmética mostrada.
+
+### 10.1 Puntuación de requisitos
+
+Los requisitos parecen tener el mismo peso y evaluarse de forma binaria:
+
+- con 6 requisitos aparecen 100, 83, 67, 50 y 33, que corresponden a fracciones
+  `6/6`, `5/6`, `4/6`, `3/6` y `2/6`;
+- con 7 requisitos aparecen 71, 57 y 43, equivalentes a `5/7`, `4/7` y `3/7`.
+
+Esto explica parte de sus porcentajes altos, pero también vuelve la métrica muy
+sensible a cómo se redacta el perfil. En Terminación de Confección se añadió
+manualmente `Hablar Frances`: ese solo requisito pasa a representar 14,3% de la
+columna, aunque no guarda proporción con educación, experiencia o dominio del
+oficio. Un requisito compuesto también vale exactamente lo mismo que uno
+atómico.
+
+### 10.2 Puntuación de CV
+
+Todos los cargos reutilizan seis dimensiones fijas:
+
+1. `Ethical-Leader`
+2. `Altruistic-Creator`
+3. `Assertive-Directive`
+4. `Analytical-Autonomous`
+5. `Resilient-Adaptive`
+6. `Creative-Innovative`
+
+Lo que cambia por cargo es su deseabilidad o peso. Para bodega prima
+`Ethical-Leader`; para terminación, `Altruistic-Creator`; para jefatura,
+`Assertive-Directive`. Esta separación entre criterios del oficio y criterios
+conductuales es una idea aprovechable, pero la fuente de evidencia no lo es.
+
+Las explicaciones visibles otorgan crédito por frases como `responsable`,
+`honestidad`, `trabajo en equipo`, `aprendo rápido` o `buena actitud`. También
+usan nivel educativo, duración de pasantías o el nombre del cargo para reducir
+dimensiones de personalidad. Esas variables pueden describir un CV, pero no
+constituyen por sí mismas una medición validada de altruismo, ética, resiliencia
+o liderazgo. Además mezclan constructos: educación y experiencia terminan
+influyendo tanto en requisitos como en personalidad.
+
+### 10.3 Total
+
+Cuando no existe autoevaluación, el total mostrado es el promedio entre
+requisitos y CV:
+
+```text
+total = redondear((requisitos + cv) / 2)
+```
+
+Ejemplos visibles: `100 + 68 → 84`, `71 + 64 → 68` y `33 + 21 → 27`.
+Algunos empates aparentes redondean distinto, lo que indica que el total usa los
+decimales internos de `CV`, no el entero presentado en la tabla.
+
+Este diseño da 50% de la decisión a seis inferencias conductuales aunque el
+candidato no haya completado una prueba estructurada. También crea un piso
+artificial: las autodescripciones genéricas suelen recibir crédito parcial y
+elevan el promedio incluso con poca evidencia del oficio.
+
+### 10.4 Ajuste incorporado en Get Empleos v4
+
+- Los requisitos técnicos, experiencia y formación permanecen en el match de
+  CV con evidencia trazable.
+- Una competencia conductual ausente queda `unknown`, aunque el CV sí tenga
+  otras experiencias; no se convierte en cero.
+- Una competencia conductual solo entra al denominador cuando hay una acción o
+  resultado laboral concreto que la sustente.
+- Los prompts rechazan adjetivos genéricos como evidencia conductual.
+- Las alternativas redactadas con `o` / `y/o` se conservan como alternativas y
+  no se multiplican en varios `must_have` simultáneos.
+
+La evolución recomendada es mostrar tres resultados separados —elegibilidad
+objetiva, afinidad del CV y evaluación estructurada— y combinarlos únicamente
+cuando la tercera fuente exista. La autoevaluación o entrevista puede cubrir
+conductas mediante preguntas ancladas y rúbricas observables; no debe
+retroproyectarse desde el estilo del CV.

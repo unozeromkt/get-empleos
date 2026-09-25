@@ -258,7 +258,6 @@ export function scoreTransferable(
 
   for (const requirement of required) {
     const weight = IMPORTANCE_WEIGHT[requirement.importance];
-    possible += weight;
 
     const variants = [requirement.canonicalName, requirement.rawName].filter((v) => !!v?.trim());
 
@@ -316,24 +315,36 @@ export function scoreTransferable(
       }
     }
 
-    // Sin evidencia no se afirma nada: una habilidad blanda ausente del CV no
-    // demuestra que la persona no la tenga (§17)
-    const noData = pool.length === 0 && blocks.length === 0;
+    // Una habilidad blanda no se puede refutar desde un CV. Aunque el documento
+    // traiga otras competencias o una trayectoria extensa, no encontrar
+    // "liderazgo" no demuestra falta de liderazgo: queda como pregunta para
+    // entrevista y sale del denominador. Esto evita el mismo error observado en
+    // Talent Scout, que convierte autodescripciones genéricas en una medición de
+    // personalidad y castiga su ausencia como si fuera evidencia negativa.
+    const hasEvidence = score > 0 && !!evidence.trim();
+    const status = !hasEvidence
+      ? "unknown"
+      : score >= 0.6
+        ? "matched"
+        : "partial";
 
     results.push(
       makeResult(
         "skill",
         requirement.rawName,
         requirement.importance,
-        noData ? "unknown" : score >= 0.6 ? "matched" : score >= 0.25 ? "partial" : "not_found",
-        score,
-        evidence,
-        value,
-        best.confidence || candidate.extractionConfidence
+        status,
+        hasEvidence ? score : 0,
+        hasEvidence ? evidence : "",
+        hasEvidence ? value : null,
+        hasEvidence ? best.confidence || candidate.extractionConfidence : 0
       )
     );
 
-    earned += weight * score;
+    if (hasEvidence) {
+      possible += weight;
+      earned += weight * score;
+    }
   }
 
   return {
